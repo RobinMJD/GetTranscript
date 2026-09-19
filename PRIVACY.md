@@ -18,6 +18,8 @@ Only export format and the two speaker display preferences are stored in `chrome
 
 GetTranscript does not send your content to an AI provider, the developer or another cloud processing service. It does not sell data.
 
+Store data-use disclosures cover locally processed website content, personal communications in meeting transcripts, and personally identifiable information such as speaker names. These disclosures describe what the extension accesses, not data received by the developer. GetTranscript uses this data solely for its transcript-export purpose and complies with the Chrome Web Store User Data Policy, including its Limited Use requirements. It does not use or transfer data for advertising, creditworthiness or lending.
+
 ## Controls and deletion
 
 You choose when to open the extension and when to download. Delete downloaded files through your operating system and clear download history in the browser if desired. Removing the extension removes its local preferences according to your browser’s extension storage lifecycle.

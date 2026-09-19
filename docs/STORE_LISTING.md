@@ -33,6 +33,12 @@ Remote code: none. All executable code is included in the package.
 
 Data use: page title, captions and speaker names are processed locally for the export functionality. Do not declare that no data is accessed: it is accessed, but not collected by the developer or transmitted for processing. Complete Store privacy disclosures consistently with PRIVACY.md and the current form wording.
 
+Disclose website content, personal communications and personally identifiable information (speaker names). These categories are processed locally, with no developer collection or cloud processing.
+
+## Reviewer test instructions
+
+No extension account, payment or developer credentials are required. Open https://iandevlin.github.io/mdn/video-player-with-captions/video-with-captions.html in Microsoft Edge, then open GetTranscript. Select English, German or Spanish and download VTT, SRT, text, Markdown or JSON. This public sample exposes 14 cues per language and has no speaker labels, so the speaker option is unavailable as expected. For the Stream adapter, open a SharePoint-hosted recording with a readable caption track and transcript panel using your own authorized Microsoft account. Speaker matching supports English and French timestamp labels. The extension cannot generate captions from audio or provide access to recordings the user cannot open.
+
 ## First-listing requirements
 
 Before public submission, set the verified developer/support contact and public privacy-policy URL, create new Chrome and Edge product listings, review their declarations, upload the shared package, and use screenshots containing only fictional meeting content. Add actual Store links and official badges to the README after the listings exist. Do not reuse another extension’s product ID.
