@@ -6,7 +6,7 @@ GetTranscript turns the captions already available on a video page into a file y
 
 Current version: **v1.0.0** · Chrome and Microsoft Edge · Manifest V3
 
-![GetTranscript export popup](docs/images/popup.png)
+![GetTranscript export preview](docs/images/store-1280x800.png)
 
 ## A useful transcript in one place
 
