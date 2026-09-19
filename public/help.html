@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CueKit Help</title>
+    <link rel="stylesheet" href="help.css" />
+  </head>
+  <body>
+    <main>
+      <h1>CueKit</h1>
+      <p class="lead">Keep the transcript. Keep the speaker names.</p>
+      <h2>Export in three steps</h2>
+      <ol>
+        <li>Open a video page and select CueKit in your browser toolbar.</li>
+        <li>
+          Choose a language and format. Available speaker labels are matched
+          automatically.
+        </li>
+        <li>
+          Select Download. The file goes to your browser’s downloads folder.
+        </li>
+      </ol>
+      <h2>Choose your format</h2>
+      <dl>
+        <dt>VTT</dt>
+        <dd>
+          Web captions with precise timings and standard speaker tags. Enable
+          “Show names in captions” to display the names as text in players that
+          hide voice tags.
+        </dd>
+        <dt>SRT</dt>
+        <dd>
+          Subtitles for most video editors. Speaker names are included as
+          visible text when enabled.
+        </dd>
+        <dt>Text &amp; Markdown</dt>
+        <dd>
+          Readable transcripts with timestamps, suitable for notes and
+          documents.
+        </dd>
+        <dt>JSON</dt>
+        <dd>
+          Structured cue data with start/end times in seconds and optional
+          speaker names.
+        </dd>
+      </dl>
+      <h2>Supported pages</h2>
+      <p>
+        Microsoft Stream video pages on SharePoint, including standard English
+        and French transcript panels. Other HTML5 players work when they expose
+        readable VTT or native caption tracks. Some sites, closed shadow
+        players, live rolling captions and cross-origin embeds are not
+        supported.
+      </p>
+      <p>
+        If no captions appear, enable them in the player and refresh CueKit.
+        Open embedded videos on their original page. CueKit does not transcribe
+        audio or infer who is speaking.
+      </p>
+      <h2>Speaker names</h2>
+      <p>
+        Names come from existing caption tags or the meeting’s transcript
+        labels. CueKit matches complete utterance text and timestamps. It leaves
+        unmatched captions unnamed. It does not correct the original service’s
+        attribution errors.
+      </p>
+      <h2>Your privacy</h2>
+      <p>
+        Transcripts are processed in the popup’s memory and saved only when you
+        download them. Only your format and speaker preferences are stored
+        locally. There are no analytics, cloud uploads, developer servers,
+        account registration or AI services.
+      </p>
+      <p>
+        Temporary active-tab access is granted when you open CueKit. The
+        extension may load caption resources referenced by that page, briefly
+        reveal captions or scroll the transcript, and then restore those
+        controls. Existing sign-in, server permissions and content availability
+        still apply. Do not export content you are not authorized to keep.
+      </p>
+      <h2>Permissions</h2>
+      <p>
+        <strong>activeTab + scripting:</strong> read captions from the page you
+        select. <strong>downloads:</strong> save your chosen file.
+        <strong>storage:</strong> remember export preferences. No persistent
+        website access, cookie access, browsing history or debugger permission.
+      </p>
+      <p class="version">CueKit 1.0.0 · Local processing</p>
+    </main>
+  </body>
+</html>

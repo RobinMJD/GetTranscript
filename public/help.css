@@ -1,0 +1,64 @@
+:root {
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  color: #142238;
+  background: #f5f8fc;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 700px;
+  margin: 40px auto;
+  padding: 40px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+}
+h1 {
+  font-size: 36px;
+  letter-spacing: -1px;
+  margin: 0;
+}
+h2 {
+  font-size: 19px;
+  margin-top: 32px;
+}
+p,
+li,
+dd {
+  font-size: 15px;
+  line-height: 1.75;
+  color: #536174;
+}
+li {
+  margin: 10px 0;
+}
+.lead {
+  font-size: 19px;
+}
+dt {
+  font-weight: 650;
+  margin-top: 18px;
+}
+dd {
+  margin: 4px 0 0;
+}
+.version {
+  border-top: 1px solid #e2e8f0;
+  margin-top: 35px;
+  padding-top: 20px;
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  main {
+    margin: 0;
+    padding: 25px;
+    border: 0;
+    border-radius: 0;
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "cuekit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Keep the transcript. Keep the speaker names.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "npm run type-check && node scripts/build.mjs",
+    "check:version": "node scripts/check-version.mjs",
+    "verify": "npm run check:version && npm run type-check && npm test && npm run build",
+    "package:stores": "node scripts/package.mjs",
+    "test:browser": "playwright test"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/chrome": "^0.3.0",
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.28.2",
+    "fflate": "^0.8.3",
+    "prettier": "^3.9.8",
+    "sharp": "^0.35.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  }
+}
