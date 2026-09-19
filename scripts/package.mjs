@@ -28,6 +28,10 @@ const manifest = JSON.parse(
 );
 if (manifest.version !== version || manifest.manifest_version !== 3)
   throw new Error("Manifest version mismatch.");
+if (manifest.short_name && manifest.short_name.length > 12)
+  throw new Error(
+    "The compact extension label exceeds the Store limit of 12 characters.",
+  );
 const expected = ["activeTab", "downloads", "scripting", "storage"];
 if (
   JSON.stringify([...manifest.permissions].sort()) !== JSON.stringify(expected)

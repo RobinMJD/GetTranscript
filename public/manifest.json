@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "GetTranscript — Video Transcript Exporter",
-  "short_name": "GetTranscript",
-  "version": "1.0.0",
+  "short_name": "Transcript",
+  "version": "1.0.1",
   "description": "Export video transcripts as VTT, SRT, text, Markdown or JSON. Preserve available speaker names. Processed locally on click.",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "scripting", "downloads", "storage"],

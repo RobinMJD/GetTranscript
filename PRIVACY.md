@@ -1,6 +1,6 @@
 # GetTranscript privacy policy
 
-Effective September 19, 2026. Version 1.0.0.
+Effective September 19, 2026. Version 1.0.1.
 
 GetTranscript runs locally in your browser. It has no developer-operated service, analytics, advertising or account system. The developer does not receive your transcripts.
 

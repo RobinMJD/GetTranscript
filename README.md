@@ -4,7 +4,7 @@
 
 GetTranscript turns the captions already available on a video page into a file you can keep, edit, search or reuse. Open the extension, choose your format, and download.
 
-Current version: **v1.0.0** · Chrome and Microsoft Edge · Manifest V3
+Current version: **v1.0.1** · Chrome and Microsoft Edge · Manifest V3
 
 ![GetTranscript export preview](docs/images/store-1280x800.png)
 
@@ -21,7 +21,7 @@ Current version: **v1.0.0** · Chrome and Microsoft Edge · Manifest V3
 
 Download the package from [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases). Chrome and Edge Store listings are being prepared.
 
-1. Extract `gettranscript-v1.0.0-chromium-stores.zip` into a permanent folder.
+1. Extract `gettranscript-v1.0.1-chromium-stores.zip` into a permanent folder.
 2. Open `chrome://extensions` or `edge://extensions` and enable **Developer mode**.
 3. Select **Load unpacked** and choose that extracted folder. Its root contains `manifest.json`.
 4. Pin GetTranscript to the toolbar.
