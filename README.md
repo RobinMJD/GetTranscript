@@ -4,7 +4,7 @@
 
 GetTranscript turns the captions already available on a video page into a file you can keep, edit, search or reuse. Open the extension, choose your format, and download.
 
-Current version: **v1.0.1** · Chrome and Microsoft Edge · Manifest V3
+Current version: **v1.1.0** · Chrome and Microsoft Edge · Manifest V3
 
 ![GetTranscript export preview](docs/images/store-1280x800.png)
 
@@ -13,15 +13,15 @@ Current version: **v1.0.1** · Chrome and Microsoft Edge · Manifest V3
 - **Five formats:** WebVTT, SRT, plain text, Markdown and structured JSON.
 - **Speaker names:** preserve existing caption voice tags and match Microsoft Stream transcript labels using complete text and timestamps.
 - **Precise timing:** preserve millisecond start and end times, including overlapping speakers.
-- **Language selection:** choose among the readable caption tracks exposed by the page.
+- **Dynamic language selection:** choose any readable caption language exposed by the supported player, including right-to-left scripts.
 - **Readable subtitles:** optionally display speaker names in VTT caption text; SRT uses visible names when speaker inclusion is enabled.
 - **Small, focused interface:** preview the first captions, remember format preferences, and get a clear result when a download completes.
 
 ## Install locally
 
-Download the package from [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases). Chrome and Edge Store listings are being prepared.
+Download the package from [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases). Install from [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/gocppcckockjkjbiefaobloabljddpfn). Chrome Store submission is deferred.
 
-1. Extract `gettranscript-v1.0.1-chromium-stores.zip` into a permanent folder.
+1. Extract `gettranscript-v1.1.0-chromium-stores.zip` into a permanent folder.
 2. Open `chrome://extensions` or `edge://extensions` and enable **Developer mode**.
 3. Select **Load unpacked** and choose that extracted folder. Its root contains `manifest.json`.
 4. Pin GetTranscript to the toolbar.
@@ -47,7 +47,7 @@ If no captions are found, turn captions on in the player and refresh GetTranscri
 
 ## Supported pages and limits
 
-**Microsoft Stream on SharePoint:** standard recording pages with readable caption tracks. The transcript adapter understands English and French timestamp labels and collects virtualized rows without assuming that the first screen is the whole meeting.
+**Microsoft Stream on SharePoint:** standard recording pages with readable caption tracks. The transcript adapter uses structural controls, numeric timestamps and locale-derived metadata, and collects virtualized rows without assuming that the first screen is the whole meeting. There is no language whitelist; the interface remains in English.
 
 **Other HTML5 video and audio players:** readable WebVTT resources or native text tracks. Same-origin frames are inspected. Cross-origin embedded players should be opened separately. Proprietary players, closed shadow roots and sites that do not expose captions are not covered.
 
@@ -73,6 +73,7 @@ npm ci
 npm run verify
 npx playwright install chromium
 npm run test:browser
+npm run test:toolbar
 npm audit --audit-level=low
 npm run package:stores
 ```
@@ -81,11 +82,13 @@ npm run package:stores
 
 The browser suite loads a production build into an isolated Chromium profile. Fixture-only host permissions and tab selection are supplied by the harness because a tab-rendered popup does not receive a real toolbar click. Extraction, MAIN-world execution, local preference storage and download APIs run unchanged. The distributable manifest is checked separately and contains no fixture permissions. Use `BROWSER_BIN=/path/to/chrome-for-testing` to select an existing compatible test browser.
 
+The separate `test:toolbar` suite opens the actual browser toolbar popup in an isolated profile, measures its native size and checks loaded, empty, restricted and download-error states. Run it with Chrome for Testing and Edge using `BROWSER_BIN`. On Linux, use `xvfb-run -a npm run test:toolbar`. `TOOLBAR_SCALE=1.5` checks display scaling; `TOOLBAR_ARTIFACTS=/path/to/qa` saves screenshots.
+
 ## Release process
 
 One deterministic Chromium ZIP is used unchanged for GitHub Releases, Chrome Web Store and Edge Add-ons. Its root manifest, permissions, required files, version and absence of demo data are checked before release. Rebuilding identical inputs produces identical package bytes.
 
-The release workflow requires an exact `vX.Y.Z` tag on `main`, verifies the version, runs unit and loaded-browser tests, audits dependencies and packages once. Publication jobs consume that verified artifact. Store jobs remain disabled until their listing identities and protected environment credentials have been configured. Manual reruns can select GitHub, Chrome or Edge independently.
+The release workflow requires an exact `vX.Y.Z` tag on `main`, verifies the version, runs unit, loaded-browser and actual-toolbar tests, audits dependencies and packages once. Publication jobs consume that verified artifact. Store jobs remain disabled until their listing identities and protected environment credentials have been configured. Manual reruns can select GitHub, Chrome or Edge independently.
 
 See [Publishing](docs/PUBLISHING.md), [Store listing](docs/STORE_LISTING.md) and [Architecture](docs/ARCHITECTURE.md). [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases) is the canonical published changelog. No Store links or installation badges are shown until their actual listings exist.
 

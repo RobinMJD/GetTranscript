@@ -80,6 +80,9 @@ jobs:
       - name: Test loaded extension
         run: npm run test:browser
 
+      - name: Test actual toolbar popup
+        run: xvfb-run -a npm run test:toolbar
+
       - name: Package and verify Chromium Store ZIP
         run: npm run package:stores
 

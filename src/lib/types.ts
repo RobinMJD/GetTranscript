@@ -7,7 +7,8 @@ export interface Cue {
 }
 export interface SpeakerRow {
   index: number;
-  label: string;
+  speaker?: string;
+  start?: number;
   text: string;
 }
 export interface RawTrack {

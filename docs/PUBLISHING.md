@@ -16,8 +16,8 @@ Never copy the other extensions’ Store IDs into GetTranscript. Existing person
 ## Every release
 
 1. Update `package.json`, root package-lock version fields, `public/manifest.json`, README and help-page version.
-2. Run `npm ci`, `npm run verify`, `npm run test:browser`, `npm audit --audit-level=low`, and `npm run package:stores`.
-3. Inspect the popup at 400 × 600 and confirm the current Store screenshots contain fictional data. Test a real supported meeting separately, including speaker matching and file readability.
+2. Run `npm ci`, `npm run verify`, `npm run test:browser`, `npm run test:toolbar`, `npm audit --audit-level=low`, and `npm run package:stores`.
+3. Inspect the actual toolbar popup in Chrome and Edge at 520px wide and up to 560px high, including display scaling, keyboard controls and compact unavailable states, and confirm the current Store screenshots contain fictional data. Test a real supported meeting separately, including speaker matching and file readability.
 4. Stage explicit source paths, commit, and push `main`. Create and push the matching `vX.Y.Z` tag.
 5. The release workflow checks exact tag identity and ancestry, repeats validation, creates the package once and passes the same bytes to all enabled publishers.
 6. Verify the GitHub release asset hash, the Chrome submission status, and the Edge operation status. “Pending review” and “accepted for certification” do not mean public availability.

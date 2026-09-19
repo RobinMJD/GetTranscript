@@ -120,23 +120,6 @@ export function parseVtt(raw: string): Cue[] {
   }
   return validateCues(cues);
 }
-export function parseSpeakerLabel(
-  label: string,
-): { name: string; time: number } | undefined {
-  const m =
-    /^(.*?)\s+((?:\d+\s+(?:hours?|heures?|minutes?|secondes?|seconds?)(?:\s|$))+)$/.exec(
-      label.trim(),
-    );
-  if (!m) return;
-  let time = 0;
-  for (const part of m[2].matchAll(
-    /(\d+)\s+(hours?|heures?|minutes?|secondes?|seconds?)/g,
-  ))
-    time +=
-      +part[1] *
-      (/^(hour|heure)/.test(part[2]) ? 3600 : /^minute/.test(part[2]) ? 60 : 1);
-  return { name: plainText(m[1]).trim(), time };
-}
 export function matchSpeakers(
   cues: Cue[],
   rows: SpeakerRow[],
@@ -148,30 +131,32 @@ export function matchSpeakers(
     g.push(c);
     groups.set(key, g);
   }
-  const candidates = rows
-    .map((r) => ({ r, label: parseSpeakerLabel(r.label) }))
-    .filter((x) => x.label);
+  const candidates = rows.filter(
+    (r) => r.speaker && Number.isFinite(r.start) && r.start! >= 0,
+  );
   const assignments = new Map<string, string>();
   const used = new Set<number>();
   for (const group of groups.values()) {
     const text = normalizeText(group.map((c) => c.text).join(" "));
     const start = Math.min(...group.map((c) => c.start));
     const matches = candidates.filter(
-      ({ r, label }) =>
+      (r) =>
         !used.has(r.index) &&
-        label &&
-        start - label.time >= -0.001 &&
-        start - label.time < 1.001 &&
+        start - r.start! >= -0.001 &&
+        start - r.start! < 1.001 &&
         normalizeText(r.text) === text,
     );
     if (matches.length === 1) {
-      used.add(matches[0].r.index);
-      for (const c of group) assignments.set(c.id, matches[0].label!.name);
+      used.add(matches[0].index);
+      for (const c of group)
+        assignments.set(c.id, plainText(matches[0].speaker!).trim());
     }
   }
   const result = cues.map((c) => ({
     ...c,
-    ...(assignments.has(c.id) ? { speaker: assignments.get(c.id) } : {}),
+    ...(!c.speaker && assignments.has(c.id)
+      ? { speaker: assignments.get(c.id) }
+      : {}),
   }));
   return {
     cues: result,
@@ -234,7 +219,7 @@ export function exportTranscript(
           cues
             .map(
               (c) =>
-                `**${timestamp(c.start)}${c.speaker ? " · " + escapeMarkdown(c.speaker) : ""}**\n\n${escapeMarkdown(c.text)}`,
+                `**${timestamp(c.start)}${c.speaker ? " · " + escapeMarkdown(c.speaker) : ""}**  \n${escapeMarkdown(c.text)}`,
             )
             .join("\n\n") +
           "\n",

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   captureActiveTab,
+  PageAccessError,
   prepareTranscript,
   saveDownload,
 } from "../lib/browser";
@@ -16,15 +17,18 @@ import { demoCapture } from "./demo";
 const demo =
   import.meta.env.DEV && new URLSearchParams(location.search).has("demo");
 const friendlyError = (error: unknown) =>
-  error instanceof Error &&
-  !/https?:\/\/|token|script|permission/i.test(error.message)
+  error instanceof PageAccessError
     ? error.message
-    : "This page could not be read. Open the original video page, turn captions on, and try again.";
+    : error instanceof Error &&
+        !/https?:\/\/|token|script|permission/i.test(error.message)
+      ? error.message
+      : "This page could not be read. Open the original video page, turn captions on, and try again.";
 export function App() {
   const [capture, setCapture] = useState<PageCapture | null>(null),
     [key, setKey] = useState(""),
     [busy, setBusy] = useState(true),
     [error, setError] = useState(""),
+    [restricted, setRestricted] = useState(false),
     [status, setStatus] = useState(""),
     [saving, setSaving] = useState(false);
   const [format, setFormat] = useState<Format>("vtt"),
@@ -50,6 +54,7 @@ export function App() {
     setError("");
     setStatus("");
     setCapture(null);
+    setRestricted(false);
     try {
       const result = demo
         ? structuredClone(demoCapture)
@@ -58,6 +63,7 @@ export function App() {
       setKey(result.tracks[0]?.key || "");
     } catch (e) {
       setError(friendlyError(e));
+      setRestricted(e instanceof PageAccessError);
     } finally {
       setBusy(false);
     }
@@ -155,12 +161,14 @@ export function App() {
           </section>
         ) : (
           <>
-            {capture && (
+            {capture && transcript && (
               <>
                 <section className="source">
                   <Icon name="video" size={30} />
                   <div>
-                    <h2 title={capture.title}>{capture.title}</h2>
+                    <h2 dir="auto" title={capture.title}>
+                      {capture.title}
+                    </h2>
                     <p>{capture.provider}</p>
                   </div>
                 </section>
@@ -193,36 +201,39 @@ export function App() {
             )}
             {transcript && (
               <>
-                <label className="field">
-                  Language
-                  <select
-                    value={key}
-                    onChange={(e) => {
-                      setKey(e.target.value);
-                      setStatus("");
-                    }}
-                  >
-                    {capture!.tracks.map((t) => (
-                      <option key={t.key} value={t.key}>
-                        {t.label || t.language || "Captions"}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  Format
-                  <select
-                    value={format}
-                    onChange={(e) => setFormat(e.target.value as Format)}
-                  >
-                    {FORMATS.map((f) => (
-                      <option key={f.value} value={f.value}>
-                        {f.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="field-help">{formatInfo.help}</span>
-                </label>
+                <div className="fields">
+                  <label className="field">
+                    Language
+                    <select
+                      dir="auto"
+                      value={key}
+                      onChange={(e) => {
+                        setKey(e.target.value);
+                        setStatus("");
+                      }}
+                    >
+                      {capture!.tracks.map((t) => (
+                        <option key={t.key} value={t.key}>
+                          {t.label || t.language || "Captions"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    Format
+                    <select
+                      value={format}
+                      onChange={(e) => setFormat(e.target.value as Format)}
+                    >
+                      {FORMATS.map((f) => (
+                        <option key={f.value} value={f.value}>
+                          {f.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <p className="field-help">{formatInfo.help}</p>
                 <label className="toggle-row">
                   <span>
                     <strong>Include speaker names</strong>
@@ -260,28 +271,46 @@ export function App() {
                 ))}
                 <section className="preview">
                   <h2>Preview</h2>
-                  {transcript.cues.slice(0, 2).map((c, i) => (
-                    <div className="preview-row" key={i}>
-                      <time>
-                        {timestamp(c.start).split(".")[0].replace(/^00:/, "")}
-                      </time>
-                      <div>
-                        {speakers && c.speaker && <strong>{c.speaker}</strong>}
-                        <p>{c.text}</p>
+                  <div
+                    className="preview-content"
+                    tabIndex={0}
+                    aria-label="Transcript preview"
+                  >
+                    {transcript.cues.slice(0, 8).map((c, i) => (
+                      <div className="preview-row" key={i}>
+                        <time>
+                          {timestamp(c.start).split(".")[0].replace(/^00:/, "")}
+                        </time>
+                        <div dir="auto">
+                          {speakers && c.speaker && (
+                            <strong>{c.speaker}</strong>
+                          )}
+                          <p>{c.text}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </section>
               </>
             )}
           </>
         )}
-        {(error || parsed.error) && (
-          <p className="notice error" role="alert">
-            <Icon name="alert" />
-            <span>{error || parsed.error}</span>
-          </p>
-        )}
+        {(error || parsed.error) &&
+          !busy &&
+          (transcript ? (
+            <p className="notice error" role="alert">
+              <Icon name="alert" />
+              <span>{error || parsed.error}</span>
+            </p>
+          ) : (
+            <section className="empty" role="alert">
+              <Icon name={restricted ? "video" : "alert"} size={30} />
+              <h2>
+                {restricted ? "Open a video page" : "Unable to read this page"}
+              </h2>
+              <p>{error || parsed.error}</p>
+            </section>
+          ))}
       </main>
       <footer>
         {status && (
@@ -289,14 +318,16 @@ export function App() {
             {status}
           </p>
         )}
-        <button
-          className="primary"
-          onClick={() => void download()}
-          disabled={!transcript || busy || saving}
-        >
-          <Icon name="download" />
-          {saving ? "Saving…" : `Download ${format.toUpperCase()}`}
-        </button>
+        {transcript && !busy && (
+          <button
+            className="primary"
+            onClick={() => void download()}
+            disabled={!transcript || busy || saving}
+          >
+            <Icon name="download" />
+            {saving ? "Saving…" : `Download ${format.toUpperCase()}`}
+          </button>
+        )}
         <div className="footer-meta">
           <span>
             <Icon name="shield" size={17} />

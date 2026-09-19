@@ -16,7 +16,7 @@ On supported Microsoft Stream pages, GetTranscript matches the meeting’s speak
 
 Everything is processed locally. There is no developer server, analytics, account registration or AI processing. Only your export preferences are stored. The extension requests temporary access to the tab you select, rather than permanent access to every website.
 
-Requirements: a readable caption track in a supported HTML5 player, or a standard Microsoft Stream recording page hosted on SharePoint. The Stream speaker adapter supports English and French transcript timestamp labels. For embedded videos, open the original player page. For pages without captions, GetTranscript cannot generate a transcript from audio. Live caption sources may expose only a rolling window.
+Requirements: a readable caption track in a supported HTML5 player, or a standard Microsoft Stream recording page hosted on SharePoint. Caption languages are discovered from the supported player without a language whitelist. The interface is in English; captions retain their original language and text direction. For embedded videos, open the original player page. For pages without captions, GetTranscript cannot generate a transcript from audio. Live caption sources may expose only a rolling window.
 
 GetTranscript is independent of Microsoft and Google. Export only content you are authorized to keep.
 
@@ -37,11 +37,11 @@ Disclose website content, personal communications and personally identifiable in
 
 ## Reviewer test instructions
 
-No extension account, payment or developer credentials are required. Open https://iandevlin.github.io/mdn/video-player-with-captions/video-with-captions.html in Microsoft Edge, then open GetTranscript. Select English, German or Spanish and download VTT, SRT, text, Markdown or JSON. This public sample exposes 14 cues per language and has no speaker labels, so the speaker option is unavailable as expected. For the Stream adapter, open a SharePoint-hosted recording with a readable caption track and transcript panel using your own authorized Microsoft account. Speaker matching supports English and French timestamp labels. The extension cannot generate captions from audio or provide access to recordings the user cannot open.
+No extension account, payment or developer credentials are required. Open https://iandevlin.github.io/mdn/video-player-with-captions/video-with-captions.html in Microsoft Edge, then open GetTranscript. Select English, German or Spanish and download VTT, SRT, text, Markdown or JSON. This public sample exposes 14 cues per language and has no speaker labels, so the speaker option is unavailable as expected. For the Stream adapter, open a SharePoint-hosted recording with a readable caption track and transcript panel using your own authorized Microsoft account. Speaker matching uses structural metadata and locale-aware numeric timestamps; missing or ambiguous names remain unnamed. The extension cannot generate captions from audio or provide access to recordings the user cannot open.
 
-## First-listing requirements
+## Listing maintenance
 
-Before public submission, set the verified developer/support contact and public privacy-policy URL, create new Chrome and Edge product listings, review their declarations, upload the shared package, and use screenshots containing only fictional meeting content. Add actual Store links and official badges to the README after the listings exist. Do not reuse another extension’s product ID.
+Update the existing Edge product with the verified release ZIP. Keep Chrome submission deferred until publisher sign-in is completed. Use the verified developer/support contact and public privacy-policy URL, review declarations, and use screenshots containing only fictional meeting content. Add actual Store links and official badges to the README after the listings exist. Do not reuse another extension’s product ID.
 
 ## Public links
 

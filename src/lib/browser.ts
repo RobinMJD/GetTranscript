@@ -2,12 +2,33 @@ import { collectPage } from "../extractor/collect";
 import { matchSpeakers, parseVtt, plainText, validateCues } from "./transcript";
 import type { PageCapture, Transcript } from "./types";
 
+export class PageAccessError extends Error {
+  constructor() {
+    super(
+      "Open the original video in a regular browser tab, then open GetTranscript again. Browser settings and extension Store pages cannot be read.",
+    );
+    this.name = "PageAccessError";
+  }
+}
+export function isRestrictedPage(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    return (
+      !["https:", "http:"].includes(url.protocol) ||
+      url.hostname === "chromewebstore.google.com" ||
+      (url.hostname === "chrome.google.com" &&
+        /^\/webstore(?:\/|$)/.test(url.pathname)) ||
+      (url.hostname === "microsoftedge.microsoft.com" &&
+        /^\/addons(?:\/|$)/.test(url.pathname))
+    );
+  } catch {
+    return true;
+  }
+}
+
 export async function captureActiveTab(): Promise<PageCapture> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || !/^https?:\/\//.test(tab.url || ""))
-    throw new Error(
-      "Open a video page in a regular browser tab, then try again.",
-    );
+  if (!tab?.id || isRestrictedPage(tab.url || "")) throw new PageAccessError();
   const [injection] = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     world: "MAIN",

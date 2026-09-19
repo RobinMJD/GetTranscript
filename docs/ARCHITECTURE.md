@@ -10,11 +10,13 @@ The popup has no background worker because collection and conversion are initiat
 
 ## Caption sources
 
-Native HTML media tracks are inspected in the main document and accessible same-origin frames. A readable referenced WebVTT track is preferred; loaded native cues are the fallback. Disabled tracks can briefly enter hidden mode to load their captions, and their original mode is restored. Stream may first need its existing caption menu to instantiate a blob track.
+Native HTML media tracks are inspected in the main document and accessible same-origin frames. A readable referenced WebVTT track is preferred; loaded native cues are the fallback. Disabled tracks can briefly enter hidden mode to load their captions, and their original mode is restored. Stream may first need its existing caption menu to instantiate each language’s blob track. Caption choices are matched to native track metadata, including lazily mounted menus. Selection, track modes and menu visibility are restored.
 
 The collector does not derive alternate network endpoints, request cookie access or perform cryptographic extraction. It reads track resources referenced by the DOM and existing transcript labels.
 
 ## Speaker matching
+
+`SpeakerRow` carries separate resolved speaker names and numeric start times. Numeric header timestamps are preferred. Unicode decimal digits are normalized; localized accessibility durations use unit forms derived from the document locale and numeric reference rows. There is no English/French label parser. Structural control IDs and icon shapes locate Stream controls independently of translated button text.
 
 Stream subtitle IDs identify fragments of a larger utterance. Fragments with the same utterance ID are grouped and their text is concatenated. A name is assigned only if one unused transcript row has exactly matching Unicode-normalized text, ignoring whitespace, and a displayed start time within the same whole second. This handles overlapping speakers without nearest-neighbor guesses.
 
@@ -24,10 +26,10 @@ Generic VTT voice tags are retained when a cue has one unambiguous voice. Multi-
 
 ## Formats
 
-The internal model uses seconds as finite numbers and plain Unicode text. VTT uses escaped text and standard voice annotations. SRT uses decimal commas and visible speaker prefixes. TXT and Markdown include timestamps; JSON documents the time unit and schema version.
+The internal model uses seconds as finite numbers and plain Unicode text. VTT uses escaped text and standard voice annotations. SRT uses decimal commas and visible speaker prefixes. TXT and Markdown include timestamps; JSON documents the time unit and schema version. Markdown puts two spaces and a newline after each bold timestamp/speaker header, producing a hard line break within the same paragraph; exactly one blank line separates cue blocks, following [CommonMark hard line breaks](https://commonmark.org/help/tutorial/03-paragraphs.html).
 
 ## UI design
 
-The design uses a white surface, navy text, blue accents, a light blue source strip and small consistent outline icons. The primary button and privacy footer remain visible at Chromium’s 400 × 600 popup size. Long titles, errors and previews scroll within the content region. System fonts avoid remote requests.
+The popup document and root use a consistent 520px width. Height follows content up to 560px, with no forced empty space in loading or unavailable states. Language and format sit side by side. The preview scrolls within 160px; Download and the privacy/Help footer remain accessible. Long labels wrap or stay within their controls, and multilingual titles and captions use automatic text direction. Restricted browser and Store pages explain that a video page must be opened.
 
-The generated visual concept was adapted to the 600-pixel popup height by reducing spacing while keeping the same content order and controls. Development fixtures use fictional names. Source code is separated into collection, conversion, browser APIs and UI modules.
+The white surface, navy text, blue accents and system fonts keep the interface focused and avoid remote requests. Store artwork uses the same development popup with fictional meeting content. Real toolbar tests complement the tab-rendered extension suite because Chromium sizes these surfaces differently.

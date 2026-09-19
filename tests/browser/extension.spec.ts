@@ -133,6 +133,9 @@ async function openPopup(target: Page) {
     { id: targetId, url: target.url() },
   );
   await popup.goto(`chrome-extension://${extensionId}/index.html`);
+  // A real toolbar popup leaves the video tab active. Keep that behavior here too;
+  // background-tab throttling otherwise delays source timers and virtualized rows.
+  await target.bringToFront();
   return popup;
 }
 
@@ -206,6 +209,10 @@ test("virtualized Stream transcript yields complete speaker rows and restores sc
         text.setAttribute("aria-setsize", "100");
         text.textContent = `Utterance ${i}`;
         entry.append(text);
+        const header = document.createElement("div");
+        header.id = `itemHeader-${i}`;
+        header.innerHTML = `<span>Speaker ${i % 3}</span><div><span id="Header-timestamp-${i}">${Math.floor(i / 60)}:${String(i % 60).padStart(2, "0")}</span></div>`;
+        entry.prepend(header);
         canvas.append(entry);
       }
     };
@@ -234,7 +241,12 @@ test("unsupported page shows an actionable empty state and cannot download", asy
   await expect(
     popup.getByRole("heading", { name: "No captions found yet" }),
   ).toBeVisible({ timeout: 10000 });
-  await expect(popup.getByRole("button", { name: /Download/ })).toBeDisabled();
+  await expect(popup.getByRole("button", { name: /Download/ })).toHaveCount(0);
+  expect(
+    await popup
+      .locator(".shell")
+      .evaluate((e) => e.getBoundingClientRect().height),
+  ).toBeLessThan(320);
   await popup.close();
   await video.close();
 });
@@ -281,7 +293,7 @@ test("cold Stream player loads captions and restores the caption menu", async ()
     document.body.replaceChildren();
     setTimeout(() => {
       document.body.innerHTML =
-        '<video><track kind="subtitles" label="English" srclang="en"></video><button role="menuitem" aria-label="Captions" aria-expanded="false">Captions</button>';
+        '<video><track kind="subtitles" label="English" srclang="en"></video><button role="menuitem" aria-label="Captions" aria-expanded="false"><i data-icon-name="ClosedCaptions"></i>Captions</button>';
       const button = document.querySelector("button")!;
       let selected = "Off";
       button.onclick = () => {
@@ -335,5 +347,281 @@ test("cold Stream player loads captions and restores the caption menu", async ()
       .locator("track")
       .evaluate((el) => (el as HTMLTrackElement).track.mode),
   ).toBe("disabled");
+  await video.close();
+});
+
+for (const locale of ["en", "fr", "de", "es", "ja", "ar"]) {
+  test(`localized Stream controls and speaker metadata: ${locale}`, async () => {
+    const video = await context.newPage();
+    await video.goto(fixtureUrl);
+    await video.evaluate(
+      ({ locale, vtt }) => {
+        document.documentElement.lang = locale;
+        const digit = new Intl.NumberFormat(locale, { useGrouping: false });
+        const name =
+          locale === "ar"
+            ? "ليلى أحمد"
+            : locale === "ja"
+              ? "田中 花子"
+              : "Alex 2 Morgan";
+        const duration = (sec: number) =>
+          `${new Intl.NumberFormat(locale, { style: "unit", unit: "minute", unitDisplay: "long" }).format(0)} ${new Intl.NumberFormat(locale, { style: "unit", unit: "second", unitDisplay: "long" }).format(sec)}`;
+        document.body.innerHTML =
+          '<video><track kind="subtitles"></video><button role="menuitem" aria-label="任意のラベル" aria-expanded="false"><i data-icon-name="SlideText"></i></button>';
+        const track = document.querySelector("track")!;
+        track.srclang = locale;
+        track.label = new Intl.DisplayNames([locale], { type: "language" }).of(
+          locale,
+        )!;
+        track.src = URL.createObjectURL(
+          new Blob([vtt.replace(/<v [^>]+>|<\/v>/g, "")], { type: "text/vtt" }),
+        );
+        const button = document.querySelector("button")!;
+        button.onclick = () => {
+          const old = document.getElementById("transcript");
+          if (old) {
+            old.remove();
+            button.setAttribute("aria-expanded", "false");
+            return;
+          }
+          const panel = document.createElement("div");
+          panel.id = "transcript";
+          for (let i = 0; i < 3; i++) {
+            const sec = [9, 16, 21][i];
+            const row = document.createElement("div");
+            row.id = `entry-${i}`;
+            row.setAttribute("aria-label", `${name} ${duration(sec)}`);
+            // Alternate full headers with consecutive rows that use locale-derived metadata.
+            if (i !== 1) {
+              const header = document.createElement("div");
+              header.id = `itemHeader-${i}`;
+              const speaker = document.createElement("span");
+              speaker.textContent = name;
+              const timing = document.createElement("div");
+              const time = document.createElement("span");
+              time.id = `Header-timestamp-${i}`;
+              time.textContent = `${digit.format(0)}:${digit.format(sec).padStart(2, "0")}`;
+              timing.append(time);
+              header.append(speaker, timing);
+              row.append(header);
+            }
+            const text = document.createElement("div");
+            text.id = `sub-entry-${i}`;
+            text.setAttribute("aria-setsize", "3");
+            text.textContent = [
+              "Let’s start with the project updates.",
+              "The first milestone is ready to review.",
+              "I will share the next steps.",
+            ][i];
+            row.append(text);
+            panel.append(row);
+          }
+          document.body.append(panel);
+          button.setAttribute("aria-expanded", "true");
+        };
+      },
+      { locale, vtt: fixtureVtt },
+    );
+    const result = await video.evaluate(
+      async (code) =>
+        await (0, eval)(
+          `(()=>{${code};return GetTranscriptExtractor.collectPage({speakers:true,prepare:true});})()`,
+        ),
+      collector,
+    );
+    expect(result.rows).toHaveLength(3);
+    expect(result.rows.map((r: { start: number }) => r.start)).toEqual([
+      9, 16, 21,
+    ]);
+    expect(result.rows.every((r: { speaker: string }) => !!r.speaker)).toBe(
+      true,
+    );
+    expect(result.tracks[0].language).toBe(locale);
+    expect(result.completeRows).toBe(true);
+    await expect(video.locator('button[role="menuitem"]')).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    const popup = await openPopup(video);
+    await expect(popup.getByText("1 speaker", { exact: true })).toBeVisible();
+    await expect(popup.getByRole("button", { name: /Download/ })).toBeEnabled();
+    expect(
+      await popup
+        .locator("html")
+        .evaluate((e) => e.getBoundingClientRect().width),
+    ).toBe(520);
+    expect(
+      await popup
+        .locator(".shell")
+        .evaluate((e) => e.getBoundingClientRect().height),
+    ).toBeLessThanOrEqual(560);
+    await popup.close();
+    await video.close();
+  });
+}
+
+test("restricted Store page has a compact explanation and never injects", async () => {
+  const target = await context.newPage();
+  await target.goto(fixtureUrl);
+  const popup = await openPopup(target);
+  await popup.evaluate(() => {
+    chrome.tabs.query = async () =>
+      [
+        {
+          id: 999,
+          url: "https://microsoftedge.microsoft.com/addons/detail/sample",
+          active: true,
+        },
+      ] as chrome.tabs.Tab[];
+    chrome.scripting.executeScript = async () => {
+      throw new Error("Injection must not run");
+    };
+  });
+  await popup.getByRole("button", { name: "Refresh transcript" }).click();
+  await expect(
+    popup.getByRole("heading", { name: "Open a video page" }),
+  ).toBeVisible();
+  await expect(popup.getByRole("button", { name: /Download/ })).toHaveCount(0);
+  expect(
+    await popup
+      .locator(".shell")
+      .evaluate((e) => e.getBoundingClientRect().height),
+  ).toBeLessThan(330);
+  await popup.close();
+  await target.close();
+});
+
+test("failed downloads retain the transcript and allow retry", async () => {
+  const video = await context.newPage();
+  await video.goto(fixtureUrl);
+  const popup = await openPopup(video);
+  await expect(popup.getByRole("button", { name: /Download/ })).toBeEnabled();
+  await popup.evaluate(() => {
+    chrome.downloads.download = async () => {
+      throw new Error("Download was interrupted. Try again.");
+    };
+  });
+  await popup.getByRole("button", { name: /Download/ }).click();
+  await expect(popup.getByRole("alert")).toContainText(
+    "Download was interrupted",
+  );
+  await expect(popup.getByRole("button", { name: /Download/ })).toBeEnabled();
+  await expect(popup.getByLabel(/^Language/)).toBeVisible();
+  await popup.close();
+  await video.close();
+});
+
+test("every exposed language is read, including independently lazy caption tracks", async () => {
+  const video = await context.newPage();
+  await video.goto(fixtureUrl);
+  await video.evaluate(() => {
+    document.body.innerHTML =
+      '<video></video><button role="menuitem" aria-expanded="true"><i data-icon-name="ClosedCaptions"></i></button>';
+    const media = document.querySelector("video")!;
+    const languages = [
+      "en",
+      "fr",
+      "de",
+      "es",
+      "ja",
+      "ar",
+      "it",
+      "pt",
+      "nl",
+      "sv",
+      "pl",
+      "hi",
+      "zh",
+      "ko",
+    ];
+    const labels = new Intl.DisplayNames(["en"], { type: "language" });
+    for (const language of languages) {
+      const track = document.createElement("track");
+      track.kind = "subtitles";
+      track.srclang = language;
+      track.label = labels.of(language)!;
+      media.append(track);
+    }
+    const toggle = document.querySelector("button")!;
+    let selected = "—";
+    toggle.dataset.selected = selected;
+    const render = () => {
+      const menu = document.createElement("div");
+      menu.role = "menu";
+      menu.id = "languages";
+      for (const label of [
+        "—",
+        ...Array.from(media.querySelectorAll("track")).map((t) => t.label),
+      ]) {
+        const item = document.createElement("button");
+        item.role = "menuitemradio";
+        item.textContent = label;
+        item.setAttribute("aria-checked", String(selected === label));
+        item.onclick = () => {
+          selected = label;
+          toggle.dataset.selected = label;
+          for (const track of media.querySelectorAll("track")) {
+            track.track.mode = track.label === label ? "showing" : "disabled";
+            if (track.label === label)
+              track.src = URL.createObjectURL(
+                new Blob(
+                  [
+                    `WEBVTT\n\n00:00.000 --> 00:02.000\nLanguage ${track.srclang}\n`,
+                  ],
+                  { type: "text/vtt" },
+                ),
+              );
+          }
+          menu.remove();
+          toggle.setAttribute("aria-expanded", "false");
+        };
+        menu.append(item);
+      }
+      document.body.append(menu);
+    };
+    toggle.onclick = () => {
+      const old = document.getElementById("languages");
+      if (old) {
+        old.remove();
+        toggle.setAttribute("aria-expanded", "false");
+      } else {
+        toggle.setAttribute("aria-expanded", "true");
+        // Cold choices can mount after the menu itself has expanded.
+        setTimeout(render, 180);
+      }
+    };
+    render();
+    // An unrelated radio menu must not be mistaken for the caption selection.
+    const unrelated = document.createElement("div");
+    unrelated.role = "menu";
+    unrelated.innerHTML =
+      '<button role="menuitemradio" aria-checked="true">Speed setting</button>';
+    document.body.prepend(unrelated);
+  });
+  const result = await video.evaluate(
+    async (code) =>
+      await (0, eval)(
+        `(()=>{${code};return GetTranscriptExtractor.collectPage({speakers:false,prepare:true});})()`,
+      ),
+    collector,
+  );
+  expect(result.tracks).toHaveLength(14);
+  for (const track of result.tracks)
+    expect(track.vtt).toContain(`Language ${track.language}`);
+  await expect(video.locator('button[role="menuitem"]')).toHaveAttribute(
+    "data-selected",
+    "—",
+  );
+  await expect(video.locator('button[role="menuitem"]')).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(
+    await video
+      .locator("track")
+      .evaluateAll((es) =>
+        es.every((e) => (e as HTMLTrackElement).track.mode === "disabled"),
+      ),
+  ).toBe(true);
   await video.close();
 });

@@ -4,7 +4,6 @@ import {
   exportTranscript,
   filename,
   matchSpeakers,
-  parseSpeakerLabel,
   timestamp,
   validateCues,
 } from "../src/lib/transcript";
@@ -14,10 +13,11 @@ const raw =
 const rows = [
   {
     index: 1,
-    label: "Alex Morgan 0 minutes 9 seconds",
+    speaker: "Alex Morgan",
+    start: 9,
     text: "Hello & welcome. Let’s begin.",
   },
-  { index: 2, label: "Jordan Lee 0 minutes 12 seconds", text: "Yes." },
+  { index: 2, speaker: "Jordan Lee", start: 12, text: "Yes." },
 ];
 const transcript: Transcript = {
   title: "Weekly sync",
@@ -40,7 +40,7 @@ describe("captions and speaker attribution", () => {
   it("refuses ambiguous speaker candidates", () => {
     const r = matchSpeakers(parseVtt(raw), [
       ...rows,
-      { ...rows[0], index: 3, label: "Casey 0 minutes 9 seconds" },
+      { ...rows[0], index: 3, speaker: "Casey", start: 9 },
     ]);
     expect(r.cues[0].speaker).toBeUndefined();
     expect(r.cues[2].speaker).toBe("Jordan Lee");
@@ -51,20 +51,24 @@ describe("captions and speaker attribution", () => {
         .matched,
     ).toBe(0);
     expect(
-      matchSpeakers(parseVtt(raw), [
-        { ...rows[0], label: "Alex 0 minutes 8 seconds" },
-      ]).matched,
+      matchSpeakers(parseVtt(raw), [{ ...rows[0], speaker: "Alex", start: 8 }])
+        .matched,
     ).toBe(0);
   });
-  it.each([
-    "Alex 16 minutes",
-    "Alex 16 minutes 0 seconds",
-    "Alex 16 minutes 0 secondes",
-  ])("handles omitted zero seconds and French: %s", (label) =>
-    expect(parseSpeakerLabel(label)).toEqual({ name: "Alex", time: 960 }),
-  );
-  it("rejects unsupported label formats", () =>
-    expect(parseSpeakerLabel("Unknown without time")).toBeUndefined());
+  it("keeps rows without reliable numeric times unattributed", () => {
+    expect(
+      matchSpeakers(parseVtt(raw), [
+        { index: 1, speaker: "Alex", text: rows[0].text },
+      ]).matched,
+    ).toBe(0);
+    expect(
+      matchSpeakers(parseVtt(raw), [{ ...rows[0], start: NaN }]).matched,
+    ).toBe(0);
+  });
+  it("preserves native voice tags when a panel disagrees", () => {
+    const cue = { ...parseVtt(raw)[2], speaker: "Original" };
+    expect(matchSpeakers([cue], rows).cues[0].speaker).toBe("Original");
+  });
   it("reads voice tags, annotations, BOM and minute-only timestamps", () => {
     const c = parseVtt(
       "\uFEFFWEBVTT\n\nNOTE metadata\nignore this\n\n1\n00:09.010 --> 00:10.000 align:start\n<v Alex>A &lt;tag&gt;</v>\n",
@@ -190,5 +194,43 @@ describe("export formats", () => {
     );
     expect(filename("CON", "en", "srt")).toBe("Transcript CON.en.srt");
     expect(filename("", "en", "vtt")).toBe("Transcript.en.vtt");
+  });
+});
+
+describe("Markdown cue spacing", () => {
+  it("uses a hard break within each cue and one blank line between cues", () => {
+    const t = {
+      ...transcript,
+      title: "Notes",
+      cues: [
+        {
+          id: "1",
+          start: 9.651,
+          end: 12,
+          text: "Hello & welcome.",
+          speaker: "Alex",
+        },
+        {
+          id: "2",
+          start: 16.731,
+          end: 20,
+          text: "Next point.",
+          speaker: "Jordan",
+        },
+      ],
+    };
+    expect(
+      exportTranscript(t, { format: "md", speakers: true, visibleNames: false })
+        .text,
+    ).toBe(
+      "# Notes\n\n**00:00:09.651 · Alex**  \nHello & welcome.\n\n**00:00:16.731 · Jordan**  \nNext point.\n",
+    );
+    expect(
+      exportTranscript(t, {
+        format: "md",
+        speakers: false,
+        visibleNames: false,
+      }).text,
+    ).toContain("**00:00:09.651**  \nHello & welcome.");
   });
 });
