@@ -131,7 +131,7 @@ export function App() {
           <Icon name="file" size={30} />
         </div>
         <div className="brand">
-          <h1>CueKit</h1>
+          <h1>GetTranscript</h1>
           <p>Transcripts, ready to keep.</p>
         </div>
         <button
@@ -183,7 +183,9 @@ export function App() {
               <section className="empty">
                 <Icon name="file" size={34} />
                 <h2>No captions found yet</h2>
-                <p>Turn captions on in the video, then refresh CueKit.</p>
+                <p>
+                  Turn captions on in the video, then refresh GetTranscript.
+                </p>
                 <p className="subtle">
                   Embedded video? Open its original page first.
                 </p>

@@ -57,7 +57,7 @@ for (const [name, bytes] of Object.entries(contents)) {
     throw new Error("Demo data leaked into the production bundle.");
 }
 await mkdir("release", { recursive: true });
-const path = `release/cuekit-v${version}-chromium-stores.zip`;
+const path = `release/gettranscript-v${version}-chromium-stores.zip`;
 await writeFile(path, zip);
 console.log(
   `${path}\nSHA-256 ${createHash("sha256").update(zip).digest("hex")}\n${Object.keys(contents).length} verified files, ${zip.length} bytes`,

@@ -1,17 +1,17 @@
-# Publishing CueKit
+# Publishing GetTranscript
 
 The release structure follows QuickPIM++ and UseMyCurrentAccount++: one browser-neutral ZIP, an exact version tag, validation before publication, independently retryable publishers, and separate reporting of submission and public availability.
 
 ## First publication
 
-1. Approve the CueKit name, public repository destination, listing copy, screenshots, privacy policy and support contact.
+1. Approve the GetTranscript name, public repository destination, listing copy, screenshots, privacy policy and support contact.
 2. Create the public repository and enable private vulnerability reporting.
 3. Create **new** Chrome and Edge listings. Record publisher/product identifiers only in an ignored `PUBLISHING_RUNBOOK.local.md` and protected GitHub environment secrets.
 4. Publish a stable public privacy-policy URL and verify it resolves before completing the Store forms.
 5. Configure `chrome-web-store` and `edge-addons` GitHub environments with review gates as appropriate. Keep Store publishers disabled until their new identities are verified.
 6. Set repository variables `CHROME_PUBLISH_ENABLED=true` and `EDGE_PUBLISH_ENABLED=true` only when those listings are ready.
 
-Never copy the other extensions’ Store IDs into CueKit. Existing personal developer credentials may be reusable only through their authorized publisher accounts, but no credentials are copied into source or ZIP files.
+Never copy the other extensions’ Store IDs into GetTranscript. Existing personal developer credentials may be reusable only through their authorized publisher accounts, but no credentials are copied into source or ZIP files.
 
 ## Every release
 

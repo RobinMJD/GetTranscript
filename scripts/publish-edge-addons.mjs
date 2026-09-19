@@ -12,7 +12,7 @@ const REQUIRED_ENV = [
   "EDGE_ADDONS_ZIP",
 ];
 const DEFAULT_CERTIFICATION_NOTES =
-  "CueKit exports captions exposed by the user-selected video page into local VTT, SRT, text, Markdown and JSON files. It preserves available speaker labels, has no developer backend or telemetry, stores only local preferences, and runs only on user action.";
+  "GetTranscript exports captions exposed by the user-selected video page into local VTT, SRT, text, Markdown and JSON files. It preserves available speaker labels, has no developer backend or telemetry, stores only local preferences, and runs only on user action.";
 
 export function getMissingEdgeAddonsConfig(env = process.env) {
   return REQUIRED_ENV.filter((key) => !String(env[key] || "").trim());

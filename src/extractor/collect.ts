@@ -307,7 +307,7 @@ export async function collectPage(options: {
   }
   if (!tracks.length)
     warnings.push(
-      "No readable captions found. Turn captions on in the player, then refresh CueKit. For an embedded video, open its original page.",
+      "No readable captions found. Turn captions on in the player, then refresh GetTranscript. For an embedded video, open its original page.",
     );
   return {
     title,

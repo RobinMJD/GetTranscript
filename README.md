@@ -1,12 +1,12 @@
-# CueKit
+# GetTranscript
 
 **Keep the transcript. Keep the speaker names.**
 
-CueKit turns the captions already available on a video page into a file you can keep, edit, search or reuse. Open the extension, choose your format, and download.
+GetTranscript turns the captions already available on a video page into a file you can keep, edit, search or reuse. Open the extension, choose your format, and download.
 
 Current version: **v1.0.0** · Chrome and Microsoft Edge · Manifest V3
 
-![CueKit export popup](docs/images/popup.png)
+![GetTranscript export popup](docs/images/popup.png)
 
 ## A useful transcript in one place
 
@@ -19,23 +19,23 @@ Current version: **v1.0.0** · Chrome and Microsoft Edge · Manifest V3
 
 ## Install locally
 
-Store listings have not been published yet. Do not install a similarly named extension assuming it is this project.
+Download the package from [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases). Chrome and Edge Store listings are being prepared.
 
-1. Extract `cuekit-v1.0.0-chromium-stores.zip` into a permanent folder.
+1. Extract `gettranscript-v1.0.0-chromium-stores.zip` into a permanent folder.
 2. Open `chrome://extensions` or `edge://extensions` and enable **Developer mode**.
 3. Select **Load unpacked** and choose that extracted folder. Its root contains `manifest.json`.
-4. Pin CueKit to the toolbar.
+4. Pin GetTranscript to the toolbar.
 
 For source builds, load `dist/` after running the commands below.
 
 ## Use it
 
-1. Open the original video page and select CueKit in the toolbar.
+1. Open the original video page and select GetTranscript in the toolbar.
 2. Keep the popup open while it reads the captions and matches speaker names.
 3. Choose the language, format and speaker options.
 4. Select **Download**. The file is saved through your browser’s download manager.
 
-If no captions are found, turn captions on in the player and refresh CueKit. For a video embedded from another origin, open the video’s original page.
+If no captions are found, turn captions on in the player and refresh GetTranscript. For a video embedded from another origin, open the video’s original page.
 
 | Format   | Best for                                     | Speaker names                                |
 | -------- | -------------------------------------------- | -------------------------------------------- |
@@ -51,7 +51,7 @@ If no captions are found, turn captions on in the player and refresh CueKit. For
 
 **Other HTML5 video and audio players:** readable WebVTT resources or native text tracks. Same-origin frames are inspected. Cross-origin embedded players should be opened separately. Proprietary players, closed shadow roots and sites that do not expose captions are not covered.
 
-CueKit does not transcribe audio, identify voices, translate text or correct the meeting service’s speaker assignments. Names are added only after a unique text-and-time match. Unmatched captions remain unnamed and partial coverage is reported. A live player may expose only a rolling window of captions rather than the complete event.
+GetTranscript does not transcribe audio, identify voices, translate text or correct the meeting service’s speaker assignments. Names are added only after a unique text-and-time match. Unmatched captions remain unnamed and partial coverage is reported. A live player may expose only a rolling window of captions rather than the complete event.
 
 ## Local processing
 
@@ -87,7 +87,7 @@ One deterministic Chromium ZIP is used unchanged for GitHub Releases, Chrome Web
 
 The release workflow requires an exact `vX.Y.Z` tag on `main`, verifies the version, runs unit and loaded-browser tests, audits dependencies and packages once. Publication jobs consume that verified artifact. Store jobs remain disabled until their listing identities and protected environment credentials have been configured. Manual reruns can select GitHub, Chrome or Edge independently.
 
-See [Publishing](docs/PUBLISHING.md), [Store listing](docs/STORE_LISTING.md) and [Architecture](docs/ARCHITECTURE.md). GitHub Releases should be the canonical published changelog once the repository is created. No Store links or installation badges are shown until their actual listings exist.
+See [Publishing](docs/PUBLISHING.md), [Store listing](docs/STORE_LISTING.md) and [Architecture](docs/ARCHITECTURE.md). [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases) is the canonical published changelog. No Store links or installation badges are shown until their actual listings exist.
 
 ## Project layout
 

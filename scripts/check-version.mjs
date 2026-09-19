@@ -11,7 +11,9 @@ if (
   throw new Error("Extension version fields are inconsistent.");
 if (process.argv[2] && process.argv[2] !== `v${version}`)
   throw new Error("Release tag does not match the extension version.");
-if (!readFileSync("public/help.html", "utf8").includes(`CueKit ${version}`))
+if (
+  !readFileSync("public/help.html", "utf8").includes(`GetTranscript ${version}`)
+)
   throw new Error("Help version is stale.");
 if (
   !readFileSync("README.md", "utf8").includes(

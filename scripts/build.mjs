@@ -14,6 +14,6 @@ await copyFile("LICENSE", "dist/LICENSE.txt");
 const reactLicense = await readFile("node_modules/react/LICENSE", "utf8");
 await writeFile(
   "dist/THIRD_PARTY_NOTICES.txt",
-  "CueKit includes React and React DOM.\n\n" + reactLicense,
+  "GetTranscript includes React and React DOM.\n\n" + reactLicense,
 );
-console.log("Built CueKit for Chromium.");
+console.log("Built GetTranscript for Chromium.");

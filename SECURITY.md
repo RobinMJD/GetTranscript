@@ -1,6 +1,6 @@
 # Security model
 
-CueKit reads content exposed to the signed-in page. It does not change server-side permissions, disable controls, intercept credentials, invoke a remote transcription service or decrypt protected network traffic. Export only material you are authorized to retain.
+GetTranscript reads content exposed to the signed-in page. It does not change server-side permissions, disable controls, intercept credentials, invoke a remote transcription service or decrypt protected network traffic. Export only material you are authorized to retain.
 
 The page is an untrusted input boundary. The collector runs in MAIN world to read native text tracks and page-created caption blobs; it receives no privileged extension objects or secrets. Its result is parsed and validated before display or download. React renders labels as text, caption markup is decoded as text, output formats escape their own syntax, and filenames discard path separators, control characters, reserved device names and bidirectional control marks.
 
@@ -12,4 +12,4 @@ Tests use intercepted fictional pages and a separate temporary browser profile. 
 
 ## Reporting
 
-Use the repository’s private vulnerability reporting facility once enabled. Until a public repository exists, report directly to the project maintainer. Do not put credentials, private transcripts or exploit-bearing private URLs into a public issue.
+Report security issues through [GitHub private vulnerability reporting](https://github.com/RobinMJD/GetTranscript/security/advisories/new). Do not put credentials, private transcripts or private meeting URLs into a public issue.

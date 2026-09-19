@@ -23,7 +23,7 @@ const fixtureUrl =
 const html = `<!doctype html><html><head><title>Weekly project sync</title></head><body><video controls><track default kind="subtitles" label="English" srclang="en" src="/captions.vtt"></video></body></html>`;
 
 test.beforeAll(async () => {
-  folder = await mkdtemp(path.join(tmpdir(), "cuekit-browser-"));
+  folder = await mkdtemp(path.join(tmpdir(), "gettranscript-browser-"));
   const ext = path.join(folder, "extension");
   await cp("dist", ext, { recursive: true });
   const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -87,7 +87,7 @@ test.beforeAll(async () => {
     entryPoints: ["src/extractor/collect.ts"],
     bundle: true,
     format: "iife",
-    globalName: "CueKitExtractor",
+    globalName: "GetTranscriptExtractor",
     write: false,
     target: "chrome120",
   });
@@ -215,7 +215,7 @@ test("virtualized Stream transcript yields complete speaker rows and restores sc
   });
   const result = await video.evaluate(async (code) => {
     return await (0, eval)(
-      `(()=>{${code};return CueKitExtractor.collectPage({speakers:true,prepare:false});})()`,
+      `(()=>{${code};return GetTranscriptExtractor.collectPage({speakers:true,prepare:false});})()`,
     );
   }, collector);
   expect(result.rows).toHaveLength(100);
@@ -318,7 +318,7 @@ test("cold Stream player loads captions and restores the caption menu", async ()
   const result = await video.evaluate(
     async (code) =>
       await (0, eval)(
-        `(()=>{${code};return CueKitExtractor.collectPage({speakers:false,prepare:true});})()`,
+        `(()=>{${code};return GetTranscriptExtractor.collectPage({speakers:false,prepare:true});})()`,
       ),
     collector,
   );
