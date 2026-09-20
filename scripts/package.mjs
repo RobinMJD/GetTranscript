@@ -32,6 +32,11 @@ if (manifest.short_name && manifest.short_name.length > 12)
   throw new Error(
     "The compact extension label exceeds the Store limit of 12 characters.",
   );
+if (
+  manifest.background?.service_worker !== "background.js" ||
+  manifest.background?.type !== "module"
+)
+  throw new Error("Missing background session worker.");
 const expected = ["activeTab", "downloads", "scripting", "storage"];
 if (
   JSON.stringify([...manifest.permissions].sort()) !== JSON.stringify(expected)
@@ -45,6 +50,7 @@ if (
   throw new Error("Persistent website access is not part of this release.");
 for (const file of [
   "index.html",
+  "background.js",
   "help.html",
   "LICENSE.txt",
   "THIRD_PARTY_NOTICES.txt",

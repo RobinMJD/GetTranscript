@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { prepareTranscript } from "../lib/browser";
 import {
-  captureActiveTab,
-  PageAccessError,
-  prepareTranscript,
-  saveDownload,
-} from "../lib/browser";
+  defaults,
+  friendlyError,
+  sessionKey,
+  type SessionReply,
+  type SessionRequest,
+  type TabSession,
+} from "../lib/session";
 import { exportTranscript, filename, timestamp } from "../lib/transcript";
 import {
   FORMATS,
@@ -16,25 +19,141 @@ import { Icon } from "./Icon";
 import { demoCapture } from "./demo";
 const demo =
   import.meta.env.DEV && new URLSearchParams(location.search).has("demo");
-const friendlyError = (error: unknown) =>
-  error instanceof PageAccessError
-    ? error.message
-    : error instanceof Error &&
-        !/https?:\/\/|token|script|permission/i.test(error.message)
-      ? error.message
-      : "This page could not be read. Open the original video page, turn captions on, and try again.";
 export function App() {
-  const [capture, setCapture] = useState<PageCapture | null>(null),
-    [key, setKey] = useState(""),
-    [busy, setBusy] = useState(true),
-    [error, setError] = useState(""),
-    [restricted, setRestricted] = useState(false),
-    [status, setStatus] = useState(""),
-    [saving, setSaving] = useState(false);
-  const [format, setFormat] = useState<Format>("vtt"),
-    [speakers, setSpeakers] = useState(true),
-    [visibleNames, setVisibleNames] = useState(false),
-    [prefsReady, setPrefsReady] = useState(false);
+  const [session, setSession] = useState<TabSession | null>(null);
+  const [connectionError, setConnectionError] = useState("");
+  const tabId = useRef<number | null>(null);
+  const revision = useRef(-1);
+  const editSequence = useRef(0);
+  const pendingEdit = useRef<{
+    key: string;
+    options: ExportOptions;
+    sequence: number;
+  } | null>(null);
+  const capture: PageCapture | null = session?.capture || null;
+  const key = session?.key || "";
+  const busy = !connectionError && (!session || session.phase === "reading");
+  const saving = session?.download === "saving";
+  const error = connectionError || session?.error || "";
+  const restricted = session?.restricted || false;
+  const status =
+    session?.download === "complete"
+      ? "Saved to your browser’s downloads."
+      : "";
+  const { format, speakers, visibleNames } = session?.options || defaults;
+  function apply(state: TabSession) {
+    if (state.tabId === tabId.current && state.revision >= revision.current) {
+      revision.current = state.revision;
+      setSession(
+        pendingEdit.current
+          ? {
+              ...state,
+              key: pendingEdit.current.key,
+              options: pendingEdit.current.options,
+            }
+          : state,
+      );
+    }
+  }
+  async function request(message: SessionRequest, edit?: number) {
+    try {
+      const reply: SessionReply = await chrome.runtime.sendMessage(message);
+      if (!reply || "error" in reply)
+        throw new Error(
+          reply?.error || "The extension could not reconnect. Try Refresh.",
+        );
+      if (pendingEdit.current?.sequence === edit) pendingEdit.current = null;
+      setConnectionError("");
+      apply(reply.session);
+    } catch (e) {
+      if (pendingEdit.current?.sequence === edit) pendingEdit.current = null;
+      setConnectionError(friendlyError(e));
+    }
+  }
+  async function refresh() {
+    pendingEdit.current = null;
+    if (demo) {
+      const capture = structuredClone(demoCapture);
+      setSession({
+        tabId: 0,
+        generation: "demo",
+        revision: 0,
+        phase: "ready",
+        capture,
+        key: capture.tracks[0]?.key || "",
+        options: { ...defaults },
+        error: "",
+        restricted: false,
+        download: "idle",
+      });
+    } else if (tabId.current !== null)
+      await request({ action: "refresh", tabId: tabId.current });
+  }
+  useEffect(() => {
+    if (demo) {
+      void refresh();
+      return;
+    }
+    let live = true;
+    const changed = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      area: string,
+    ) => {
+      if (area !== "session" || tabId.current === null) return;
+      const value = changes[sessionKey(tabId.current)]?.newValue as
+        TabSession | undefined;
+      if (live && value) apply(value);
+    };
+    chrome.storage.onChanged.addListener(changed);
+    void chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then(async ([tab]) => {
+        if (!live) return;
+        if (tab?.id === undefined)
+          throw new Error("Open a video tab, then open GetTranscript again.");
+        tabId.current = tab.id;
+        await request({ action: "get", tabId: tab.id });
+      })
+      .catch((e) => {
+        if (live) setConnectionError(friendlyError(e));
+      });
+    return () => {
+      live = false;
+      chrome.storage.onChanged.removeListener(changed);
+    };
+  }, []);
+  function change(options: Partial<ExportOptions> = {}, selectedKey = key) {
+    if (!session || saving) return;
+    const next = { ...session.options, ...options };
+    if (demo)
+      setSession({
+        ...session,
+        key: selectedKey,
+        options: next,
+        download: "idle",
+        error: "",
+      });
+    else {
+      const sequence = ++editSequence.current;
+      pendingEdit.current = { key: selectedKey, options: next, sequence };
+      setSession({
+        ...session,
+        key: selectedKey,
+        options: next,
+        download: "idle",
+        error: "",
+      });
+      void request(
+        {
+          action: "update",
+          tabId: session.tabId,
+          key: selectedKey,
+          options: next,
+        },
+        sequence,
+      );
+    }
+  }
   const parsed = useMemo(() => {
     if (!capture || !key) return { transcript: null, error: "" };
     try {
@@ -49,81 +168,26 @@ export function App() {
       transcript?.cues.flatMap((c) => (c.speaker ? [c.speaker] : [])) || [],
     ),
   ];
-  async function refresh() {
-    setBusy(true);
-    setError("");
-    setStatus("");
-    setCapture(null);
-    setRestricted(false);
-    try {
-      const result = demo
-        ? structuredClone(demoCapture)
-        : await captureActiveTab();
-      setCapture(result);
-      setKey(result.tracks[0]?.key || "");
-    } catch (e) {
-      setError(friendlyError(e));
-      setRestricted(e instanceof PageAccessError);
-    } finally {
-      setBusy(false);
-    }
-  }
-  useEffect(() => {
-    void refresh();
-    if (demo) {
-      setPrefsReady(true);
+  async function download() {
+    if (!transcript || !session) return;
+    if (!demo) {
+      await request({
+        action: "download",
+        tabId: session.tabId,
+        key,
+        options: session.options,
+      });
       return;
     }
-    void chrome.storage.local
-      .get("preferences")
-      .then(({ preferences }) => {
-        const p = preferences as Partial<ExportOptions> | undefined;
-        if (p) {
-          if (FORMATS.some((f) => f.value === p.format)) setFormat(p.format!);
-          if (typeof p.speakers === "boolean") setSpeakers(p.speakers);
-          if (typeof p.visibleNames === "boolean")
-            setVisibleNames(p.visibleNames);
-        }
-        setPrefsReady(true);
-      })
-      .catch(() => setPrefsReady(true));
-  }, []);
-  useEffect(() => {
-    setStatus("");
-    if (prefsReady && !demo)
-      void chrome.storage.local
-        .set({ preferences: { format, speakers, visibleNames } })
-        .catch(() =>
-          setStatus("Preferences could not be saved for the next visit."),
-        );
-  }, [format, speakers, visibleNames, prefsReady]);
-  async function download() {
-    if (!transcript) return;
-    setSaving(true);
-    setError("");
-    setStatus("");
-    try {
-      const output = exportTranscript(transcript, {
-        format,
-        speakers,
-        visibleNames,
-      });
-      const name = filename(transcript.title, transcript.language, format);
-      if (demo) {
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(
-          new Blob([output.text], { type: output.mime }),
-        );
-        link.download = name;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(link.href), 10000);
-      } else await saveDownload(output.text, output.mime, name);
-      setStatus("Saved to your browser’s downloads.");
-    } catch (e) {
-      setError(friendlyError(e));
-    } finally {
-      setSaving(false);
-    }
+    const output = exportTranscript(transcript, session.options);
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(
+      new Blob([output.text], { type: output.mime }),
+    );
+    link.download = filename(transcript.title, transcript.language, format);
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+    setSession({ ...session, download: "complete" });
   }
   function help() {
     if (demo) window.open("/help.html", "_blank", "noopener");
@@ -143,6 +207,7 @@ export function App() {
         <button
           className="icon-button"
           aria-label="Refresh transcript"
+          title="Refresh transcript"
           onClick={() => void refresh()}
           disabled={busy || saving}
         >
@@ -156,7 +221,7 @@ export function App() {
             <h2>Reading this page…</h2>
             <p>Finding captions and matching speaker names.</p>
             <p className="subtle">
-              Keep this popup open. Longer meetings can take a few seconds.
+              You can close this popup. Reading continues in the background.
             </p>
           </section>
         ) : (
@@ -202,28 +267,51 @@ export function App() {
             {transcript && (
               <>
                 <div className="fields">
-                  <label className="field">
-                    Language
-                    <select
-                      dir="auto"
-                      value={key}
-                      onChange={(e) => {
-                        setKey(e.target.value);
-                        setStatus("");
-                      }}
-                    >
-                      {capture!.tracks.map((t) => (
-                        <option key={t.key} value={t.key}>
-                          {t.label || t.language || "Captions"}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  {capture!.tracks.length > 1 ? (
+                    <label className="field">
+                      Language
+                      <select
+                        id="language"
+                        dir="auto"
+                        value={key}
+                        disabled={saving}
+                        onChange={(e) => change({}, e.target.value)}
+                      >
+                        {capture!.tracks.map((t) => (
+                          <option key={t.key} value={t.key}>
+                            {t.label || t.language || "Captions"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <div className="field">
+                      <span id="language-label">Detected language</span>
+                      <div
+                        className="detected-language"
+                        aria-labelledby="language-label"
+                        dir="auto"
+                        title={
+                          capture!.tracks[0]?.label ||
+                          capture!.tracks[0]?.language ||
+                          "Not specified"
+                        }
+                      >
+                        {capture!.tracks[0]?.label ||
+                          capture!.tracks[0]?.language ||
+                          "Not specified"}
+                      </div>
+                    </div>
+                  )}
                   <label className="field">
                     Format
                     <select
+                      id="format"
                       value={format}
-                      onChange={(e) => setFormat(e.target.value as Format)}
+                      disabled={saving}
+                      onChange={(e) =>
+                        change({ format: e.target.value as Format })
+                      }
                     >
                       {FORMATS.map((f) => (
                         <option key={f.value} value={f.value}>
@@ -247,8 +335,8 @@ export function App() {
                     role="switch"
                     type="checkbox"
                     checked={speakers}
-                    disabled={!names.length}
-                    onChange={(e) => setSpeakers(e.target.checked)}
+                    disabled={saving || !names.length}
+                    onChange={(e) => change({ speakers: e.target.checked })}
                   />
                 </label>
                 {format === "vtt" && (
@@ -258,8 +346,10 @@ export function App() {
                       role="switch"
                       type="checkbox"
                       checked={visibleNames}
-                      disabled={!speakers || !names.length}
-                      onChange={(e) => setVisibleNames(e.target.checked)}
+                      disabled={saving || !speakers || !names.length}
+                      onChange={(e) =>
+                        change({ visibleNames: e.target.checked })
+                      }
                     />
                   </label>
                 )}

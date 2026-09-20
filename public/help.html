@@ -16,13 +16,22 @@
           Open a video page and select GetTranscript in your browser toolbar.
         </li>
         <li>
-          Choose a language and format. Available speaker labels are matched
-          automatically.
+          Choose a format. The detected language is shown automatically; a
+          selector appears if multiple caption tracks are available. Speaker
+          labels are matched automatically.
         </li>
         <li>
           Select Download. The file goes to your browser’s downloads folder.
         </li>
       </ol>
+      <h2>Close it. Come back when you’re ready.</h2>
+      <p>
+        Reading and exports continue when you close the popup. Reopen it on the
+        same tab to see the current job, completed transcript or download
+        status. Refresh starts a new scan. Closing the video tab clears its
+        cached result. If you change videos within the same tab, select Refresh
+        to read the new video.
+      </p>
       <h2>Choose your format</h2>
       <dl>
         <dt>VTT</dt>
@@ -73,10 +82,12 @@
       </p>
       <h2>Your privacy</h2>
       <p>
-        Transcripts are processed in the popup’s memory and saved only when you
-        download them. Only your format and speaker preferences are stored
-        locally. There are no analytics, cloud uploads, developer servers,
-        account registration or AI services.
+        Per-tab transcripts and job status stay in temporary browser session
+        memory. Refresh replaces them; closing the video tab clears them.
+        Browser restart or extension reload/update also clears sessions. Only
+        format and speaker preferences are saved persistently by the extension.
+        There are no analytics, cloud uploads, developer servers, account
+        registration or AI services.
       </p>
       <p>
         Temporary active-tab access is granted when you open GetTranscript. The
@@ -89,8 +100,9 @@
       <p>
         <strong>activeTab + scripting:</strong> read captions from the page you
         select. <strong>downloads:</strong> save your chosen file.
-        <strong>storage:</strong> remember export preferences. No persistent
-        website access, cookie access, browsing history or debugger permission.
+        <strong>storage:</strong> remember export preferences and temporary
+        per-tab results. No persistent website access, cookie access, browsing
+        history or debugger permission.
       </p>
       <p>
         <a
@@ -107,7 +119,7 @@
           >Privacy policy</a
         >
       </p>
-      <p class="version">GetTranscript 1.1.0 · Local processing</p>
+      <p class="version">GetTranscript 1.2.0 · Local processing</p>
     </main>
   </body>
 </html>

@@ -31,20 +31,6 @@ export const demoCapture: PageCapture = {
         },
       ],
     },
-    {
-      key: "fr",
-      label: "French",
-      language: "fr",
-      cues: [
-        {
-          id: "1",
-          start: 9,
-          end: 14,
-          text: "Commençons par les nouvelles du projet.",
-          speaker: "Alex Morgan",
-        },
-      ],
-    },
   ],
   rows: [],
   expectedRows: 0,

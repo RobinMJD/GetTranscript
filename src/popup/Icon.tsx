@@ -14,8 +14,8 @@ export function Icon({
     ),
     refresh: (
       <>
-        <path d="M20 7v5h-5M4 17v-5h5" />
-        <path d="M5.3 8a7 7 0 0 1 11.6-3L20 8M4 16l3.1 3A7 7 0 0 0 18.7 16" />
+        <path d="M20 11a8 8 0 1 1-2.34-5.66L21 8" />
+        <path d="M21 3v5h-5" />
       </>
     ),
     video: (

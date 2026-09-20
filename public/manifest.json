@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "GetTranscript — Video Transcript Exporter",
+  "name": "GetTranscript \u2014 Video Transcript Exporter",
   "short_name": "Transcript",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Export video transcripts as VTT, SRT, text, Markdown or JSON. Preserve available speaker names. Processed locally on click.",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "scripting", "downloads", "storage"],
@@ -25,5 +25,9 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; connect-src 'none'"
   },
-  "homepage_url": "https://github.com/RobinMJD/GetTranscript"
+  "homepage_url": "https://github.com/RobinMJD/GetTranscript",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
 }

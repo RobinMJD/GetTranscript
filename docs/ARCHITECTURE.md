@@ -2,9 +2,13 @@
 
 ## Flow
 
-Toolbar popup → temporary active tab → self-contained MAIN-world collector → validated transcript model → exact speaker matching → selected serializer → browser download manager.
+Toolbar popup → per-tab background session → temporary active tab → self-contained MAIN-world collector → validated transcript model → exact speaker matching → selected serializer → browser download manager.
 
-The popup has no background worker because collection and conversion are initiated by the user and short lived. A download uses a data URL, so its bytes do not depend on a popup-owned object URL remaining alive after the popup closes. The popup reports completion only after `chrome.downloads` returns a completed state.
+An MV3 service worker owns collection and export. `chrome.storage.session` holds each tab’s job, result, selected track, options and download status; the popup subscribes to changes and reconnects without launching another scan. Worker suspension retains completed sessions. A bounded API heartbeat runs only during a user-requested operation, keeping longer collection promises alive. If the browser forcibly interrupts a scan, reopening reports the interruption instead of silently restarting.
+
+Short state transactions are serialized. Each scan has a generation token; stale completions cannot recreate closed-tab data. Refresh replaces the current tab’s session, and `tabs.onRemoved` deletes it. Navigating within an existing tab preserves its cached result until explicit Refresh. Browser restart or extension reload/update clears session storage. Quota exhaustion is reported without silently evicting other tabs. Export preferences alone use persistent `storage.local`; no permissions were added.
+
+A download uses a data URL independent of the popup lifetime. Its ID is stored in the session and completion is reconciled through `downloads.onChanged` and on reopening, including completion before the ID was stored. The UI reports success only after `chrome.downloads` confirms completion. Only this extension’s exact popup URL may send job messages; page scripts cannot invoke them.
 
 `collectPage` is self-contained because `chrome.scripting.executeScript` serializes the function. No imported functions or lexical module state may be referenced from its body. Keep this invariant when refactoring and validate the production build through the loaded-extension suite.
 
@@ -30,6 +34,6 @@ The internal model uses seconds as finite numbers and plain Unicode text. VTT us
 
 ## UI design
 
-The popup document and root use a consistent 520px width. Height follows content up to 560px, with no forced empty space in loading or unavailable states. Language and format sit side by side. The preview scrolls within 160px; Download and the privacy/Help footer remain accessible. Long labels wrap or stay within their controls, and multilingual titles and captions use automatic text direction. Restricted browser and Store pages explain that a video page must be opened.
+The popup document and root use a consistent 520px width. Height follows content up to 560px, with no forced empty space in loading or unavailable states. Detected language and format sit side by side. A single track is shown as muted, noninteractive information; two or more tracks expose a selector. The preview scrolls within 160px; Download and the privacy/Help footer remain accessible. Long labels wrap or stay within their controls, and multilingual titles and captions use automatic text direction. Restricted browser and Store pages explain that a video page must be opened.
 
 The white surface, navy text, blue accents and system fonts keep the interface focused and avoid remote requests. Store artwork uses the same development popup with fictional meeting content. Real toolbar tests complement the tab-rendered extension suite because Chromium sizes these surfaces differently.

@@ -178,6 +178,9 @@ test("loaded extension exports all five formats and persists preferences", async
   await popup.close();
   const again = await openPopup(video);
   await expect(again.getByLabel(/^Format/)).toHaveValue("json");
+  await expect(again.getByRole("status")).toHaveText(
+    "Saved to your browser’s downloads.",
+  );
   await again.close();
   await video.close();
 });
@@ -464,17 +467,17 @@ test("restricted Store page has a compact explanation and never injects", async 
   const target = await context.newPage();
   await target.goto(fixtureUrl);
   const popup = await openPopup(target);
-  await popup.evaluate(() => {
-    chrome.tabs.query = async () =>
-      [
-        {
-          id: 999,
-          url: "https://microsoftedge.microsoft.com/addons/detail/sample",
-          active: true,
-        },
-      ] as chrome.tabs.Tab[];
-    chrome.scripting.executeScript = async () => {
-      throw new Error("Injection must not run");
+  await expect(popup.getByRole("button", { name: /Download/ })).toBeEnabled();
+  // Edge handles its real Store URL outside a routed headless fixture. Supply the
+  // URL at the tab API boundary; production restricted-page checking still runs.
+  await context.serviceWorkers()[0].evaluate(() => {
+    const original = chrome.tabs.get;
+    chrome.tabs.get = async (id: number) => {
+      chrome.tabs.get = original;
+      return {
+        ...(await original(id)),
+        url: "https://microsoftedge.microsoft.com/addons/detail/sample",
+      };
     };
   });
   await popup.getByRole("button", { name: "Refresh transcript" }).click();
@@ -496,8 +499,11 @@ test("failed downloads retain the transcript and allow retry", async () => {
   await video.goto(fixtureUrl);
   const popup = await openPopup(video);
   await expect(popup.getByRole("button", { name: /Download/ })).toBeEnabled();
-  await popup.evaluate(() => {
+  const worker = context.serviceWorkers()[0];
+  await worker.evaluate(() => {
+    const original = chrome.downloads.download;
     chrome.downloads.download = async () => {
+      chrome.downloads.download = original;
       throw new Error("Download was interrupted. Try again.");
     };
   });
@@ -506,7 +512,14 @@ test("failed downloads retain the transcript and allow retry", async () => {
     "Download was interrupted",
   );
   await expect(popup.getByRole("button", { name: /Download/ })).toBeEnabled();
-  await expect(popup.getByLabel(/^Language/)).toBeVisible();
+  await expect(
+    popup.getByText("Detected language", { exact: true }),
+  ).toBeVisible();
+  await expect(popup.getByRole("combobox")).toHaveCount(1);
+  await popup.getByRole("button", { name: /Download/ }).click();
+  await expect(popup.getByRole("status")).toHaveText(
+    "Saved to your browser’s downloads.",
+  );
   await popup.close();
   await video.close();
 });
@@ -623,5 +636,111 @@ test("every exposed language is read, including independently lazy caption track
         es.every((e) => (e as HTMLTrackElement).track.mode === "disabled"),
       ),
   ).toBe(true);
+  await video.close();
+});
+
+test("popup closure preserves a running scan, completed result, options and download status", async () => {
+  const video = await context.newPage();
+  await video.goto(fixtureUrl);
+  const worker = context.serviceWorkers()[0];
+  await worker.evaluate(() => {
+    const original = chrome.scripting.executeScript;
+    (globalThis as any).testScans = 0;
+    chrome.scripting.executeScript = async (...args: any[]) => {
+      (globalThis as any).testScans++;
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      return (original as any)(...args);
+    };
+    (globalThis as any).restoreScript = () => {
+      chrome.scripting.executeScript = original;
+    };
+  });
+  let popup = await openPopup(video);
+  await expect(
+    popup.getByRole("heading", { name: "Reading this page…" }),
+  ).toBeVisible();
+  await popup.close();
+  await expect
+    .poll(() =>
+      worker.evaluate(async () =>
+        Object.values(await chrome.storage.session.get(null)).some(
+          (s: any) => s.phase === "ready",
+        ),
+      ),
+    )
+    .toBe(true);
+  popup = await openPopup(video);
+  await expect(popup.getByRole("button", { name: /Download/ })).toBeEnabled();
+  await expect(
+    popup.getByText("Detected language", { exact: true }),
+  ).toBeVisible();
+  await expect(popup.getByLabel(/^Language/)).toHaveCount(0);
+  expect(await worker.evaluate(() => (globalThis as any).testScans)).toBe(1);
+  await popup.getByLabel(/^Format/).selectOption("md");
+  await popup.getByRole("switch", { name: /Include speaker names/ }).uncheck();
+  await worker.evaluate(() => {
+    const original = chrome.downloads.download;
+    chrome.downloads.download = async (
+      options: chrome.downloads.DownloadOptions,
+    ) => {
+      chrome.downloads.download = original;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      return original(options);
+    };
+  });
+  await popup.getByRole("button", { name: "Download MD" }).click();
+  await expect(popup.getByRole("button", { name: "Saving…" })).toBeVisible();
+  await popup.close();
+  // Make a rescan observable, then reopen: the original snapshot must remain.
+  await video.evaluate(() => {
+    document.title = "A different title after collection";
+  });
+  popup = await openPopup(video);
+  await expect(popup.getByRole("status")).toHaveText(
+    "Saved to your browser’s downloads.",
+  );
+  await expect(popup.getByLabel(/^Format/)).toHaveValue("md");
+  await expect(
+    popup.getByRole("switch", { name: /Include speaker names/ }),
+  ).not.toBeChecked();
+  await expect(popup.locator(".source h2")).toHaveText("Weekly project sync");
+  expect(await worker.evaluate(() => (globalThis as any).testScans)).toBe(1);
+  await popup.getByRole("button", { name: "Refresh transcript" }).click();
+  await expect(popup.locator(".source h2")).toHaveText(
+    "A different title after collection",
+  );
+  expect(await worker.evaluate(() => (globalThis as any).testScans)).toBe(2);
+  await popup.close();
+  await video.close();
+  await expect
+    .poll(() =>
+      worker.evaluate(
+        async () => Object.keys(await chrome.storage.session.get(null)).length,
+      ),
+    )
+    .toBe(0);
+  await worker.evaluate(() => (globalThis as any).restoreScript());
+});
+
+test("a stopped background worker restores the completed per-tab session", async () => {
+  const video = await context.newPage();
+  await video.goto(fixtureUrl);
+  let popup = await openPopup(video);
+  await expect(popup.getByRole("button", { name: /Download/ })).toBeEnabled();
+  await popup.getByLabel(/^Format/).selectOption("srt");
+  await popup.close();
+  await video.evaluate(() => {
+    document.title = "Must not rescan";
+  });
+  const cdp = await context.newCDPSession(video);
+  await cdp.send("ServiceWorker.enable");
+  await cdp.send("ServiceWorker.stopAllWorkers");
+  popup = await openPopup(video);
+  await expect(
+    popup.getByRole("button", { name: "Download SRT" }),
+  ).toBeEnabled();
+  await expect(popup.locator(".source h2")).toHaveText("Weekly project sync");
+  await cdp.detach();
+  await popup.close();
   await video.close();
 });

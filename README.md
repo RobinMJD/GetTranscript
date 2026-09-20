@@ -4,7 +4,7 @@
 
 GetTranscript turns the captions already available on a video page into a file you can keep, edit, search or reuse. Open the extension, choose your format, and download.
 
-Current version: **v1.1.0** · Chrome and Microsoft Edge · Manifest V3
+Current version: **v1.2.0** · Chrome and Microsoft Edge · Manifest V3
 
 ![GetTranscript export preview](docs/images/store-1280x800.png)
 
@@ -13,7 +13,7 @@ Current version: **v1.1.0** · Chrome and Microsoft Edge · Manifest V3
 - **Five formats:** WebVTT, SRT, plain text, Markdown and structured JSON.
 - **Speaker names:** preserve existing caption voice tags and match Microsoft Stream transcript labels using complete text and timestamps.
 - **Precise timing:** preserve millisecond start and end times, including overlapping speakers.
-- **Dynamic language selection:** choose any readable caption language exposed by the supported player, including right-to-left scripts.
+- **Detected language:** one caption track appears as read-only information; multiple tracks get a language selector. All readable languages exposed by the supported player are supported, including right-to-left scripts.
 - **Readable subtitles:** optionally display speaker names in VTT caption text; SRT uses visible names when speaker inclusion is enabled.
 - **Small, focused interface:** preview the first captions, remember format preferences, and get a clear result when a download completes.
 
@@ -21,7 +21,7 @@ Current version: **v1.1.0** · Chrome and Microsoft Edge · Manifest V3
 
 Download the package from [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases). Install from [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/gocppcckockjkjbiefaobloabljddpfn). Chrome Store submission is deferred.
 
-1. Extract `gettranscript-v1.1.0-chromium-stores.zip` into a permanent folder.
+1. Extract `gettranscript-v1.2.0-chromium-stores.zip` into a permanent folder.
 2. Open `chrome://extensions` or `edge://extensions` and enable **Developer mode**.
 3. Select **Load unpacked** and choose that extracted folder. Its root contains `manifest.json`.
 4. Pin GetTranscript to the toolbar.
@@ -31,8 +31,8 @@ For source builds, load `dist/` after running the commands below.
 ## Use it
 
 1. Open the original video page and select GetTranscript in the toolbar.
-2. Keep the popup open while it reads the captions and matches speaker names.
-3. Choose the language, format and speaker options.
+2. Let it read the captions and match speaker names. You can close the popup; the job continues. Reopen it to see the same result.
+3. Choose the format and speaker options. A language selector appears only when multiple caption tracks are available.
 4. Select **Download**. The file is saved through your browser’s download manager.
 
 If no captions are found, turn captions on in the player and refresh GetTranscript. For a video embedded from another origin, open the video’s original page.
@@ -57,8 +57,9 @@ GetTranscript does not transcribe audio, identify voices, translate text or corr
 
 - No developer server, analytics, account registration, AI service or cloud upload.
 - No persistent access to all websites, cookie access, browsing history or debugger permission.
-- Only format and speaker preferences are saved in local extension storage.
-- Transcript text remains in popup memory and in files you explicitly download.
+- Format and speaker preferences are saved in local extension storage.
+- Per-tab transcripts, selected tracks and download status stay in temporary browser session memory, so closing the popup does not lose them. Refresh replaces that tab’s session; closing the source tab clears it. Browser restart, extension reload/update or disabling the extension also clears these sessions.
+- Changing the video within an existing tab keeps the previous result until you press Refresh. Downloaded files remain under your control.
 - Referenced caption resources may be loaded directly from the page or its caption host, with normal browser access restrictions.
 - Stream controls may briefly open, select captions or scroll during collection, then return to their previous state.
 
@@ -97,6 +98,8 @@ See [Publishing](docs/PUBLISHING.md), [Store listing](docs/STORE_LISTING.md) and
 ```text
 src/extractor/   Page-local caption and transcript collection
 src/lib/         Parsing, exact speaker matching, formats and browser APIs
+src/background.ts  Background collection, downloads and session events
+src/lib/session.ts Per-tab job lifecycle and temporary state
 src/popup/       Popup UI and development-only sample data
 tests/          Conversion regressions and isolated loaded-extension tests
 scripts/        Build, version checks, packaging and Store publication

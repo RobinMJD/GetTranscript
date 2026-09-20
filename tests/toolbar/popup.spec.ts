@@ -78,8 +78,9 @@ test("real toolbar popup stays compact and usable through every state", async ()
     });
     const open = async () => {
       await helper.evaluate(async (id) => {
-        await chrome.tabs.update(id, { active: true });
-        await chrome.action.openPopup();
+        const tab = await chrome.tabs.update(id, { active: true });
+        if (!tab) throw new Error("Fixture tab closed unexpectedly");
+        await chrome.action.openPopup({ windowId: tab.windowId });
       }, targetId);
       let target: string | undefined;
       await expect
@@ -178,17 +179,34 @@ test("real toolbar popup stays compact and usable through every state", async ()
         `document.body.innerText.includes('Let’s start with the project updates.')`,
       ),
     ).toBe(true);
-    await screenshot("popup-ready.png");
-    await popup.read(`document.querySelectorAll('select')[1].focus()`);
+    expect(await popup.read(`document.querySelectorAll('select').length`)).toBe(
+      1,
+    );
     expect(
       await popup.read(
-        `document.activeElement===document.querySelectorAll('select')[1]`,
+        `document.querySelector('.detected-language').textContent`,
+      ),
+    ).toBe("English");
+    await screenshot("popup-ready.png");
+    await popup.close();
+    await video.evaluate(() => {
+      document.title = "Changed title only visible after Refresh";
+    });
+    popup = await open();
+    await ready();
+    expect(
+      await popup.read(`document.querySelector('.source h2').textContent`),
+    ).toBe("Weekly project sync");
+    await popup.read(`document.querySelector('#format').focus()`);
+    expect(
+      await popup.read(
+        `document.activeElement===document.querySelector('#format')`,
       ),
     ).toBe(true);
     // Native platform select menus are outside the renderer; exercise the same change event
     // here and verify native keyboard operation separately on desktop.
     await popup.read(
-      `{const select=document.querySelectorAll('select')[1];select.value='md';select.dispatchEvent(new Event('change',{bubbles:true}));}`,
+      `{const select=document.querySelector('#format');select.value='md';select.dispatchEvent(new Event('change',{bubbles:true}));}`,
     );
     await expect
       .poll(() =>
@@ -292,9 +310,14 @@ test("real toolbar popup stays compact and usable through every state", async ()
         `Array.from(document.querySelectorAll('select,.icon-button,.primary')).every(e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth})`,
       ),
     ).toBe(true);
-    await popup.read(
-      `chrome.downloads.download=async()=>{throw new Error('Download was interrupted. Try again.')};document.querySelector('.primary').click()`,
-    );
+    await context.serviceWorkers()[0].evaluate(() => {
+      const original = chrome.downloads.download;
+      chrome.downloads.download = async () => {
+        chrome.downloads.download = original;
+        throw new Error("Download was interrupted. Try again.");
+      };
+    });
+    await popup.read(`document.querySelector('.primary').click()`);
     await expect
       .poll(() =>
         popup.read(
@@ -309,6 +332,13 @@ test("real toolbar popup stays compact and usable through every state", async ()
       document.title = "Empty page";
     });
     popup = await open();
+    await ready();
+    expect(
+      await popup.read(`document.querySelector('[role="alert"]').textContent`),
+    ).toContain("Download was interrupted");
+    await popup.read(
+      `document.querySelector('[aria-label="Refresh transcript"]').click()`,
+    );
     await expect
       .poll(() =>
         popup.read(`document.body.innerText.includes('No captions found yet')`),
@@ -322,6 +352,9 @@ test("real toolbar popup stays compact and usable through every state", async ()
     await popup.close();
     await video.goto("about:blank");
     popup = await open();
+    await popup.read(
+      `document.querySelector('[aria-label="Refresh transcript"]').click()`,
+    );
     await expect
       .poll(() =>
         popup.read(`document.body.innerText.includes('Open a video page')`),
@@ -343,6 +376,9 @@ test("real toolbar popup stays compact and usable through every state", async ()
         '<video><track kind="subtitles" label="English" srclang="en" src="/slow.vtt"></video>';
     });
     popup = await open();
+    await popup.read(
+      `document.querySelector('[aria-label="Refresh transcript"]').click()`,
+    );
     await expect
       .poll(() =>
         popup.read(`document.querySelector('main')?.getAttribute('aria-busy')`),
@@ -353,7 +389,28 @@ test("real toolbar popup stays compact and usable through every state", async ()
       false,
     );
     await screenshot("popup-loading.png");
+    await popup.close();
+    // Let the worker finish while there is no popup, then reconnect to the same job.
+    await expect
+      .poll(() =>
+        helper.evaluate(
+          async (id) =>
+            (
+              (await chrome.storage.session.get(`tab-session:${id}`))[
+                `tab-session:${id}`
+              ] as { phase?: string } | undefined
+            )?.phase,
+          targetId,
+        ),
+      )
+      .toBe("ready");
+    popup = await open();
     await ready();
+    expect(
+      await popup.read(
+        `document.body.innerText.includes('A caption after loading.')`,
+      ),
+    ).toBe(true);
     await popup.close();
     expect(errors).toEqual([]);
   } finally {

@@ -26,8 +26,8 @@ export function isRestrictedPage(rawUrl: string): boolean {
   }
 }
 
-export async function captureActiveTab(): Promise<PageCapture> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+export async function captureTab(tabId: number): Promise<PageCapture> {
+  const tab = await chrome.tabs.get(tabId);
   if (!tab?.id || isRestrictedPage(tab.url || "")) throw new PageAccessError();
   const [injection] = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
@@ -71,31 +71,17 @@ export function prepareTranscript(
     warnings,
   };
 }
-export async function saveDownload(
+export async function startDownload(
   text: string,
   mime: string,
   filename: string,
-): Promise<void> {
+): Promise<number> {
   if (text.length > 8_000_000)
-    throw new Error("This export is too large to save from the popup.");
-  const id = await chrome.downloads.download({
+    throw new Error("This export is too large to save.");
+  return chrome.downloads.download({
     url: `data:${mime};charset=utf-8,${encodeURIComponent(text)}`,
     filename,
     conflictAction: "uniquify",
     saveAs: false,
   });
-  // A data URL survives popup closure; never keep a fragile popup-owned blob alive.
-  const until = Date.now() + 20000;
-  while (Date.now() < until) {
-    const [item] = await chrome.downloads.search({ id });
-    if (item?.state === "complete") return;
-    if (item?.state === "interrupted")
-      throw new Error(
-        "The browser interrupted the download. Check Downloads and try again.",
-      );
-    await new Promise((r) => setTimeout(r, 150));
-  }
-  throw new Error(
-    "The download has started. Check your browser Downloads for its final status.",
-  );
 }
