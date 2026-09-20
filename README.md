@@ -19,7 +19,7 @@ Current version: **v1.2.0** · Chrome and Microsoft Edge · Manifest V3
 
 ## Install locally
 
-Download the package from [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases). Install from [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/gocppcckockjkjbiefaobloabljddpfn). Chrome Store submission is deferred.
+Download the package from [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases). Install from [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/gocppcckockjkjbiefaobloabljddpfn). Version 1.2.0 was submitted to the Chrome Web Store on September 20, 2026 and is pending review, with automatic publication after approval.
 
 1. Extract `gettranscript-v1.2.0-chromium-stores.zip` into a permanent folder.
 2. Open `chrome://extensions` or `edge://extensions` and enable **Developer mode**.

@@ -37,11 +37,11 @@ Disclose website content, personal communications and personally identifiable in
 
 ## Reviewer test instructions
 
-No extension account, payment or developer credentials are required. Open https://iandevlin.github.io/mdn/video-player-with-captions/video-with-captions.html in Microsoft Edge, then open GetTranscript. Select English, German or Spanish and download VTT, SRT, text, Markdown or JSON. This public sample exposes 14 cues per language and has no speaker labels, so the speaker option is unavailable as expected. Close and reopen the popup during reading or after downloading to verify that it reconnects to the same result. Refresh starts a new scan; closing the video tab clears the session. For the Stream adapter, open a SharePoint-hosted recording with a readable caption track and transcript panel using your own authorized Microsoft account. Speaker matching uses structural metadata and locale-aware numeric timestamps; missing or ambiguous names remain unnamed. The extension cannot generate captions from audio or provide access to recordings the user cannot open.
+No extension account, payment or developer credentials are required. Open https://iandevlin.github.io/mdn/video-player-with-captions/video-with-captions.html in Chrome or Microsoft Edge, then open GetTranscript. Select English, German or Spanish and download VTT, SRT, text, Markdown or JSON. This public sample exposes 14 cues per language and has no speaker labels, so the speaker option is unavailable as expected. Close and reopen the popup during reading or after downloading to verify that it reconnects to the same result. Refresh starts a new scan; closing the video tab clears the session. For the Stream adapter, open a SharePoint-hosted recording with a readable caption track and transcript panel using your own authorized Microsoft account. Speaker matching uses structural metadata and locale-aware numeric timestamps; missing or ambiguous names remain unnamed. The extension cannot generate captions from audio or provide access to recordings the user cannot open.
 
 ## Listing maintenance
 
-Update the existing Edge product with the verified release ZIP. Keep Chrome submission deferred until publisher sign-in is completed. Use the verified developer/support contact and public privacy-policy URL, review declarations, and use screenshots containing only fictional meeting content. Add actual Store links and official badges to the README after the listings exist. Do not reuse another extension’s product ID.
+Update the existing Chrome and Edge products with the same verified release ZIP. Chrome v1.2.0 was submitted on September 20, 2026 and is pending review, with automatic publication after approval. Use the verified developer/support contact and public privacy-policy URL, review declarations, and use screenshots containing only fictional meeting content. Add actual Store links and official badges to the README after the listings exist. Do not reuse another extension’s product ID.
 
 ## Public links
 
@@ -49,4 +49,5 @@ Update the existing Edge product with the verified release ZIP. Keep Chrome subm
 - Support: https://github.com/RobinMJD/GetTranscript/issues
 - Privacy policy: https://github.com/RobinMJD/GetTranscript/blob/main/PRIVACY.md
 - Screenshot: `docs/images/store-1280x800.png` (fictional meeting content)
+- Small promo tile: `docs/images/store-promo-440x280.png` (source: `scripts/store-promo.svg`)
 - Logo: `public/icons/icon128.png`
