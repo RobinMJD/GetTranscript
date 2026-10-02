@@ -426,3 +426,46 @@ footer {
     transition: none !important;
   }
 }
+
+.popup-options {
+  position: relative;
+  flex-shrink: 0;
+}
+.popup-options-menu {
+  position: absolute;
+  right: 0;
+  top: 42px;
+  width: 274px;
+  padding: 5px;
+  z-index: 10;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px #19324d24;
+}
+.popup-options-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px;
+  border: none;
+  border-radius: 6px;
+  text-align: left;
+}
+.popup-options-menu svg {
+  color: var(--blue);
+  flex-shrink: 0;
+}
+.popup-options-menu strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 630;
+}
+.popup-options-menu small {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--muted);
+}

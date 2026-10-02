@@ -2,10 +2,77 @@ export function Icon({
   name,
   size = 20,
 }: {
-  name: "download" | "refresh" | "video" | "shield" | "file" | "alert";
+  name:
+    | "download"
+    | "refresh"
+    | "video"
+    | "shield"
+    | "file"
+    | "alert"
+    | "more"
+    | "plus"
+    | "close"
+    | "up"
+    | "down"
+    | "check"
+    | "pause"
+    | "clock"
+    | "search"
+    | "settings"
+    | "external"
+    | "combine";
   size?: number;
 }) {
   const paths = {
+    more: (
+      <>
+        <circle cx="5" cy="12" r="1" />
+        <circle cx="12" cy="12" r="1" />
+        <circle cx="19" cy="12" r="1" />
+      </>
+    ),
+    plus: <path d="M12 5v14M5 12h14" />,
+    close: <path d="m6 6 12 12M6 18 18 6" />,
+    up: <path d="m6 15 6-6 6 6" />,
+    down: <path d="m6 9 6 6 6-6" />,
+    check: <path d="m5 12 4 4L19 6" />,
+    pause: (
+      <>
+        <path d="M8 5v14M16 5v14" />
+      </>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="10.5" cy="10.5" r="6.5" />
+        <path d="m16 16 5 5" />
+      </>
+    ),
+    settings: (
+      <>
+        <path d="M4 7h16M4 17h16" />
+        <circle cx="8" cy="7" r="2" fill="currentColor" />
+        <circle cx="16" cy="17" r="2" fill="currentColor" />
+      </>
+    ),
+    external: (
+      <>
+        <path d="M14 4h6v6m-1-5-9 9" />
+        <path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5" />
+      </>
+    ),
+    combine: (
+      <>
+        <rect x="3" y="4" width="7" height="7" rx="1" />
+        <rect x="14" y="4" width="7" height="7" rx="1" />
+        <path d="M6 14v3h12v-3m-6 3v4" />
+      </>
+    ),
     download: (
       <>
         <path d="M12 3v12m-5-5 5 5 5-5" />

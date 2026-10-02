@@ -22,6 +22,8 @@ const demo =
 export function App() {
   const [session, setSession] = useState<TabSession | null>(null);
   const [connectionError, setConnectionError] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const tabId = useRef<number | null>(null);
   const revision = useRef(-1);
   const editSequence = useRef(0);
@@ -189,6 +191,33 @@ export function App() {
     setTimeout(() => URL.revokeObjectURL(link.href), 10000);
     setSession({ ...session, download: "complete" });
   }
+  useEffect(() => {
+    if (!menuOpen) return;
+    const dismiss = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuRef.current?.querySelector("button")?.focus();
+      }
+    };
+    document.addEventListener("mousedown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", dismiss);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [menuOpen]);
+  function combineRecordings() {
+    setMenuOpen(false);
+    if (demo) window.open("/collection.html?demo", "_blank", "noopener");
+    else if (tabId.current !== null)
+      void chrome.tabs.create({
+        url:
+          chrome.runtime.getURL("collection.html") + "?tabId=" + tabId.current,
+      });
+  }
   function help() {
     if (demo) window.open("/help.html", "_blank", "noopener");
     else void chrome.tabs.create({ url: chrome.runtime.getURL("help.html") });
@@ -213,6 +242,32 @@ export function App() {
         >
           <Icon name="refresh" />
         </button>
+        <div className="popup-options" ref={menuRef}>
+          <button
+            className="icon-button"
+            aria-label="More options"
+            title="More options"
+            aria-expanded={menuOpen}
+            aria-controls="popup-options-menu"
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            <Icon name="more" />
+          </button>
+          {menuOpen && (
+            <div className="popup-options-menu" id="popup-options-menu">
+              <button
+                onClick={combineRecordings}
+                disabled={!demo && (tabId.current === null || restricted)}
+              >
+                <Icon name="combine" size={18} />
+                <span>
+                  <strong>Combine recordings…</strong>
+                  <small>Bring multiple parts into one transcript</small>
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
       </header>
       <main aria-busy={busy}>
         {busy ? (

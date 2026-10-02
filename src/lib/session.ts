@@ -10,6 +10,7 @@ export const defaults: ExportOptions = {
 };
 export interface TabSession {
   tabId: number;
+  sourceId?: string;
   generation: string;
   revision: number;
   phase: "reading" | "ready" | "error";
@@ -53,6 +54,7 @@ export interface SessionDependencies {
   preferences(): Promise<ExportOptions>;
   savePreferences(options: ExportOptions): Promise<void>;
   capture(tabId: number): Promise<PageCapture>;
+  sourceIdentity?(tabId: number): Promise<string>;
   download(text: string, mime: string, name: string): Promise<number>;
   downloadState(id: number): Promise<string | undefined>;
 }
@@ -63,6 +65,10 @@ export class Sessions {
   private queue: Promise<unknown> = Promise.resolve();
   private jobs = new Set<string>();
   constructor(private deps: SessionDependencies) {}
+  busy(tabId: number) {
+    return this.activeTabs.has(tabId);
+  }
+  private activeTabs = new Set<number>();
   private transaction<T>(task: () => Promise<T>): Promise<T> {
     const next = this.queue.then(task, task);
     this.queue = next.catch(() => {});
@@ -94,6 +100,7 @@ export class Sessions {
   private async begin(tabId: number): Promise<TabSession> {
     const state: TabSession = {
       tabId,
+      sourceId: await this.deps.sourceIdentity?.(tabId),
       generation: crypto.randomUUID(),
       revision: (await this.deps.read(tabId))?.revision || 0,
       phase: "reading",
@@ -105,6 +112,7 @@ export class Sessions {
     };
     await this.write(state);
     this.jobs.add(state.generation);
+    this.activeTabs.add(tabId);
     void this.collect(state);
     return state;
   }
@@ -134,12 +142,24 @@ export class Sessions {
       });
     } finally {
       this.jobs.delete(state.generation);
+      this.activeTabs.delete(state.tabId);
     }
   }
   get(tabId: number) {
     return this.transaction(async () => {
       const state = await this.deps.read(tabId);
       if (!state) return this.begin(tabId);
+      if (
+        state.sourceId &&
+        this.deps.sourceIdentity &&
+        state.sourceId !== (await this.deps.sourceIdentity(tabId))
+      ) {
+        if (this.activeTabs.has(tabId))
+          throw new Error(
+            "The recording changed while it was being read. Reopen GetTranscript when reading has stopped.",
+          );
+        return this.begin(tabId);
+      }
       if (state.phase === "reading" && !this.jobs.has(state.generation)) {
         state.phase = "error";
         state.error =
@@ -178,6 +198,14 @@ export class Sessions {
       const state = await this.deps.read(tabId);
       if (!state || state.phase !== "ready" || !state.capture)
         throw new Error("Refresh to read the transcript first.");
+      if (
+        state.sourceId &&
+        this.deps.sourceIdentity &&
+        state.sourceId !== (await this.deps.sourceIdentity(tabId))
+      )
+        throw new Error(
+          "The recording changed. Reopen GetTranscript to read the current video before exporting.",
+        );
       if (state.download === "saving") return state;
       if (
         !validOptions(options) ||

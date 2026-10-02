@@ -4,7 +4,7 @@
 
 GetTranscript turns the captions already available on a video page into a file you can keep, edit, search or reuse. Open the extension, choose your format, and download.
 
-Current version: **v1.2.0** · Chrome and Microsoft Edge · Manifest V3
+Current version: **v1.3.0** · Chrome and Microsoft Edge · Manifest V3
 
 ![GetTranscript export preview](docs/images/store-1280x800.png)
 
@@ -16,12 +16,13 @@ Current version: **v1.2.0** · Chrome and Microsoft Edge · Manifest V3
 - **Detected language:** one caption track appears as read-only information; multiple tracks get a language selector. All readable languages exposed by the supported player are supported, including right-to-left scripts.
 - **Readable subtitles:** optionally display speaker names in VTT caption text; SRT uses visible names when speaker inclusion is enabled.
 - **Small, focused interface:** preview the first captions, remember format preferences, and get a clear result when a download completes.
+- **Meetings split into recordings:** collect up to 20 parts in a separate workspace, then export one combined transcript or a ZIP of individual files.
 
 ## Install locally
 
-Download the package from [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases). Install from [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/gocppcckockjkjbiefaobloabljddpfn). Version 1.2.0 was submitted to the Chrome Web Store on September 20, 2026 and is pending review, with automatic publication after approval.
+Install from the [Chrome Web Store](https://chromewebstore.google.com/detail/gjmfapccgoioohohinpdladdjkfnlclk) or [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/gocppcckockjkjbiefaobloabljddpfn). Verified packages are also available from [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases). Store updates become available after their respective review processes.
 
-1. Extract `gettranscript-v1.2.0-chromium-stores.zip` into a permanent folder.
+1. Extract the chosen `gettranscript-vX.Y.Z-chromium-stores.zip` release package into a permanent folder.
 2. Open `chrome://extensions` or `edge://extensions` and enable **Developer mode**.
 3. Select **Load unpacked** and choose that extracted folder. Its root contains `manifest.json`.
 4. Pin GetTranscript to the toolbar.
@@ -35,7 +36,7 @@ For source builds, load `dist/` after running the commands below.
 3. Choose the format and speaker options. A language selector appears only when multiple caption tracks are available.
 4. Select **Download**. The file is saved through your browser’s download manager.
 
-If no captions are found, turn captions on in the player and refresh GetTranscript. For a video embedded from another origin, open the video’s original page.
+If no captions are found, turn captions on in the player and refresh GetTranscript. For a video embedded from another origin, open the video's original page.
 
 | Format   | Best for                                     | Speaker names                                |
 | -------- | -------------------------------------------- | -------------------------------------------- |
@@ -45,6 +46,22 @@ If no captions are found, turn captions on in the player and refresh GetTranscri
 | Markdown | Notes and documentation                      | Timestamp and bold speaker heading           |
 | JSON     | Other tools and processing pipelines         | Optional `speaker` field; numeric seconds    |
 
+## Combine a meeting’s recordings
+
+Open the popup’s **More options → Combine recordings** workspace. Add up to 20 recording links from the same website as the source tab, or use **Find links on source** to choose Stream links already exposed by that page. The extension does not guess filenames or search a recording library. Check the order, choose each part’s available caption track, and select **Read recordings**.
+
+Keep the source video tab open: collection visits each recording in that tab, then restores its starting page and player state unless you have navigated elsewhere. Reading continues if you close the workspace. Reopen it from the popup to see progress, pause and continue, or retry a failed part. Refresh collection keeps its links, order and options while clearing captured content for a fresh read. Incomplete parts must be retried or explicitly removed before export.
+
+Choose **One combined transcript** in any of the five formats, or **Separate files (.zip)** to keep each recording’s original timestamps. Advanced timeline options are:
+
+- **Join end to end:** uses actual video durations, including silence. It does not infer pauses between recordings.
+- **Set start times:** enter each part’s start as `HH:MM:SS.mmm` or seconds to preserve known gaps. Parts must not overlap.
+- **Keep each part’s original times:** available for combined Markdown, text and JSON. Combined VTT/SRT use a shared timeline; individual subtitle files retain local times.
+
+![Combine recordings workspace](docs/images/store-collection-1280x800.png)
+
+Speaker labels are resolved separately within each recording before combining. Different caption languages require the explicit **Allow different languages** option for a combined export; the text is not translated. Markdown, text and JSON can include recording links. Combined JSON uses schema version 2, with per-part metadata, local cue timings and timeline offsets; single-recording JSON remains schema version 1.
+
 ## Supported pages and limits
 
 **Microsoft Stream on SharePoint:** standard recording pages with readable caption tracks. The transcript adapter uses structural controls, numeric timestamps and locale-derived metadata, and collects virtualized rows without assuming that the first screen is the whole meeting. There is no language whitelist; the interface remains in English.
@@ -53,13 +70,15 @@ If no captions are found, turn captions on in the player and refresh GetTranscri
 
 GetTranscript does not transcribe audio, identify voices, translate text or correct the meeting service’s speaker assignments. Names are added only after a unique text-and-time match. Unmatched captions remain unnamed and partial coverage is reported. A live player may expose only a rolling window of captions rather than the complete event.
 
+Long Stream transcripts are read in resumable chunks of about 18 seconds, restoring controls between chunks. Each active capture invocation has a 10-minute budget; continuing a paused job gets a fresh budget. Collection and export are bounded to 50,000 cues and 5 million text characters, and temporary-storage limits still apply. Limits report partial speaker coverage or ask for fewer parts instead of silently claiming a complete export.
+
 ## Local processing
 
 - No developer server, analytics, account registration, AI service or cloud upload.
 - No persistent access to all websites, cookie access, browsing history or debugger permission.
 - Format and speaker preferences are saved in local extension storage.
-- Per-tab transcripts, selected tracks and download status stay in temporary browser session memory, so closing the popup does not lose them. Refresh replaces that tab’s session; closing the source tab clears it. Browser restart, extension reload/update or disabling the extension also clears these sessions.
-- Changing the video within an existing tab keeps the previous result until you press Refresh. Downloaded files remain under your control.
+- Per-tab transcripts, collections, canonical recording URLs, selected tracks, progress checkpoints and download status stay in temporary browser session memory. Refresh replaces the corresponding cached result; closing the source tab clears its results and collection. Browser restart, extension reload/update or disabling the extension also clears these sessions.
+- Reopening the popup after navigating to another recording checks its source identity and reads the new recording. Downloaded files remain under your control.
 - Referenced caption resources may be loaded directly from the page or its caption host, with normal browser access restrictions.
 - Stream controls may briefly open, select captions or scroll during collection, then return to their previous state.
 
@@ -100,7 +119,10 @@ src/extractor/   Page-local caption and transcript collection
 src/lib/         Parsing, exact speaker matching, formats and browser APIs
 src/background.ts  Background collection, downloads and session events
 src/lib/session.ts Per-tab job lifecycle and temporary state
+src/lib/collection.ts Multipart models, timeline validation and export
+src/lib/collection-session.ts Collection queue, checkpoints and lifecycle
 src/popup/       Popup UI and development-only sample data
+src/collection/  Combine-recordings workspace
 tests/          Conversion regressions and isolated loaded-extension tests
 scripts/        Build, version checks, packaging and Store publication
 public/         Manifest, local help and icons

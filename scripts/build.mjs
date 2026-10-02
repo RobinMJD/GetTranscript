@@ -21,8 +21,12 @@ await bundle({
 });
 await copyFile("LICENSE", "dist/LICENSE.txt");
 const reactLicense = await readFile("node_modules/react/LICENSE", "utf8");
+const zipLicense = await readFile("node_modules/fflate/LICENSE", "utf8");
 await writeFile(
   "dist/THIRD_PARTY_NOTICES.txt",
-  "GetTranscript includes React and React DOM.\n\n" + reactLicense,
+  "GetTranscript includes React, React DOM and fflate.\n\n" +
+    reactLicense +
+    "\n\nfflate\n\n" +
+    zipLicense,
 );
 console.log("Built GetTranscript for Chromium.");

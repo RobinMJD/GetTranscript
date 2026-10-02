@@ -29,8 +29,52 @@
         Reading and exports continue when you close the popup. Reopen it on the
         same tab to see the current job, completed transcript or download
         status. Refresh starts a new scan. Closing the video tab clears its
-        cached result. If you change videos within the same tab, select Refresh
-        to read the new video.
+        cached result. Reopening the popup after navigating to another recording
+        checks its identity and reads that recording.
+      </p>
+      <h2>Combine a meeting’s recordings</h2>
+      <ol>
+        <li>
+          In the popup, open <strong>More options → Combine recordings</strong>.
+          Add up to 20 links from the same website as your source tab, or choose
+          <strong>Find links on source</strong> to select Stream links exposed
+          by the page. GetTranscript does not guess filenames.
+        </li>
+        <li>
+          Check the order and each part’s caption language, then select
+          <strong>Read recordings</strong>. Keep the source video tab open:
+          collection visits each recording there and then restores its starting
+          page and player state, unless you have navigated elsewhere.
+        </li>
+        <li>
+          Choose <strong>One combined transcript</strong> in VTT, SRT, text,
+          Markdown or JSON, or <strong>Separate files (.zip)</strong> with each
+          recording’s original timestamps.
+        </li>
+      </ol>
+      <p>
+        You can close this workspace while reading continues and reopen it from
+        the popup. Use Pause and Continue reading to resume progress, or Retry a
+        failed part. Each part must finish or be explicitly removed before
+        export. Refresh collection keeps its links, order and options while
+        clearing captured content for a fresh read.
+      </p>
+      <p>
+        Under Advanced options, <strong>Join end to end</strong> uses full video
+        durations, including silence; it does not infer gaps between recordings.
+        <strong>Set start times</strong> accepts HH:MM:SS.mmm or seconds to preserve
+        known gaps without overlapping parts.
+        <strong>Keep each part’s original times</strong> is available for
+        combined Markdown, text and JSON. For subtitles with original times,
+        choose separate files.
+      </p>
+      <p>
+        Names are resolved separately within each recording. To combine
+        different caption languages, explicitly enable
+        <strong>Allow different languages</strong>; the text is not translated.
+        Markdown, text and JSON can include links to the recordings. Combined
+        JSON uses schema version 2 with part metadata, local cue times and
+        timeline offsets.
       </p>
       <h2>Choose your format</h2>
       <dl>
@@ -80,14 +124,22 @@
         leaves unmatched captions unnamed. It does not correct the original
         service’s attribution errors.
       </p>
+      <p>
+        Long transcript rows are read in resumable steps of about 18 seconds,
+        restoring the player’s controls and scroll position between steps. An
+        active capture has a 10-minute budget; continuing after a pause starts a
+        fresh active budget. Collection and text-size limits are reported in the
+        result, and unmatched captions remain unnamed.
+      </p>
       <h2>Your privacy</h2>
       <p>
-        Per-tab transcripts and job status stay in temporary browser session
-        memory. Refresh replaces them; closing the video tab clears them.
-        Browser restart or extension reload/update also clears sessions. Only
-        format and speaker preferences are saved persistently by the extension.
-        There are no analytics, cloud uploads, developer servers, account
-        registration or AI services.
+        Per-tab transcripts, collections, recording URLs, progress checkpoints
+        and job status stay in temporary browser session memory. Refresh
+        replaces cached content; closing the source video tab clears its results
+        and collection. Browser restart or extension reload/update also clears
+        sessions. Only format and speaker preferences are saved persistently by
+        the extension. There are no analytics, cloud uploads, developer servers,
+        account registration or AI services.
       </p>
       <p>
         Temporary active-tab access is granted when you open GetTranscript. The
@@ -101,8 +153,8 @@
         <strong>activeTab + scripting:</strong> read captions from the page you
         select. <strong>downloads:</strong> save your chosen file.
         <strong>storage:</strong> remember export preferences and temporary
-        per-tab results. No persistent website access, cookie access, browsing
-        history or debugger permission.
+        per-tab results and collections. No persistent website access, cookie
+        access, browsing history or debugger permission.
       </p>
       <p>
         <a
@@ -119,7 +171,7 @@
           >Privacy policy</a
         >
       </p>
-      <p class="version">GetTranscript 1.2.0 · Local processing</p>
+      <p class="version">GetTranscript 1.3.0 · Local processing</p>
     </main>
   </body>
 </html>

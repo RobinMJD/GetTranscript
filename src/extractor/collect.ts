@@ -1,18 +1,41 @@
-import type { PageCapture, RawTrack, SpeakerRow } from "../lib/types";
+import type {
+  PageCapture,
+  RawTrack,
+  RowCursor,
+  SpeakerRow,
+} from "../lib/types";
 
 /** Self-contained: Chrome serializes this function into the active page's MAIN world. */
 export async function collectPage(options: {
   speakers: boolean;
   prepare: boolean;
+  resume?: RowCursor;
 }): Promise<PageCapture> {
   const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-  const deadline = Date.now() + 30000;
+  const startedAt = options.resume?.startedAt || Date.now();
+  // Leave two seconds for restoring controls before this bounded chunk returns.
+  const deadline = Date.now() + 18000;
   const warnings: string[] = [];
+  const canonicalSource = (raw: string) => {
+    const url = new URL(raw, location.href);
+    url.hash = "";
+    if (/\/stream\.aspx$/i.test(url.pathname) && url.searchParams.has("id")) {
+      const id = url.searchParams.get("id")!;
+      url.search = "";
+      url.searchParams.set("id", id);
+    }
+    return url.href;
+  };
+  const sourceUrl = canonicalSource(location.href);
+  if (options.resume && options.resume.sourceUrl !== sourceUrl)
+    throw new Error(
+      "The recording changed while reading. Refresh to read the current video.",
+    );
   const isStream =
     /(^|\.)sharepoint\.(com|us|de|cn)$/.test(location.hostname) &&
     /\/stream\.aspx$/i.test(location.pathname);
   // A toolbar click can arrive while Stream is still mounting its player.
-  if (isStream && options.prepare) {
+  if (isStream && options.prepare && !options.resume) {
     const playerDeadline = Date.now() + 6000;
     for (
       ;
@@ -70,8 +93,8 @@ export async function collectPage(options: {
       .normalize("NFKC")
       .toLocaleLowerCase()
       .replace(/[^\p{Letter}\p{Mark}]/gu, "");
-  const units = new Map<string, number>();
-  const ambiguousUnits = new Set<string>();
+  const units = new Map<string, number>(options.resume?.timeUnits || []);
+  const ambiguousUnits = new Set<string>(options.resume?.ambiguousUnits || []);
   const addUnit = (key: string, scale: number) => {
     if (!key || ambiguousUnits.has(key)) return;
     if (units.has(key) && units.get(key) !== scale) {
@@ -167,7 +190,64 @@ export async function collectPage(options: {
       Array.from(d.querySelectorAll<HTMLMediaElement>("video,audio")),
     )
     .slice(0, 12);
+  // A duration is usable only when it belongs to one unambiguous media element.
+  const playableMedia = media.filter((element) =>
+    Array.from(element.textTracks).some((track) =>
+      ["captions", "subtitles"].includes(track.kind),
+    ),
+  );
+  const durationElement =
+    playableMedia.length === 1 ? playableMedia[0] : undefined;
+  const duration =
+    durationElement &&
+    Number.isFinite(durationElement.duration) &&
+    durationElement.duration > 0 &&
+    durationElement.duration <= 360000
+      ? durationElement.duration
+      : undefined;
+  const linkedRecordings = isStream
+    ? [
+        ...new Map(
+          Array.from(
+            document.querySelectorAll<HTMLAnchorElement>("a[href]"),
+          ).flatMap((anchor) => {
+            try {
+              const url = new URL(anchor.href, location.href);
+              if (
+                url.protocol !== "https:" ||
+                url.origin !== location.origin ||
+                !/\/stream\.aspx$/i.test(url.pathname) ||
+                !url.searchParams.get("id")
+              )
+                return [];
+              const canonical = canonicalSource(url.href);
+              if (canonical === sourceUrl) return [];
+              return [
+                [
+                  canonical,
+                  {
+                    url: canonical,
+                    title: (anchor.textContent || "Recording")
+                      .trim()
+                      .slice(0, 250),
+                  },
+                ] as const,
+              ];
+            } catch {
+              return [];
+            }
+          }),
+        ).values(),
+      ].slice(0, 100)
+    : [];
   const tracks: RawTrack[] = [];
+  let captionSize = 0;
+  let nativeCueCount = 0;
+  const sizeWarning = () => {
+    const message =
+      "Some caption tracks exceed the scan size limit. Those tracks were omitted in full; the available tracks are unchanged.";
+    if (!warnings.includes(message)) warnings.push(message);
+  };
   const originalModes = new Map(
     media.flatMap((m) =>
       Array.from(m.textTracks).map((t) => [t, t.mode] as const),
@@ -176,6 +256,7 @@ export async function collectPage(options: {
   let originalCaption: string | undefined;
   let captionMenuWasExpanded = false;
   let captionMenuTouched = false;
+  let restorationDeadline = 0;
   const captionItems = () => {
     const items = Array.from(
       document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'),
@@ -191,12 +272,14 @@ export async function collectPage(options: {
     const menu = match?.closest('[role="menu"]') || match?.parentElement;
     return menu ? items.filter((e) => menu.contains(e)) : [];
   };
-  const openCaptionMenu = async () => {
+  const openCaptionMenu = async (restoring = false) => {
     if (!captionButton) return [];
     if (captionButton.getAttribute("aria-expanded") !== "true") {
       captionButton.click();
     }
-    const menuDeadline = Date.now() + 2000;
+    const menuDeadline = restoring
+      ? restorationDeadline
+      : Math.min(deadline, Date.now() + 2000);
     let items = captionItems();
     while (!items.length && Date.now() < menuDeadline) {
       await wait(100);
@@ -242,7 +325,7 @@ export async function collectPage(options: {
     closeCaptionMenu();
   };
   try {
-    for (let mi = 0; mi < media.length; mi++) {
+    for (let mi = 0; !options.resume && mi < media.length; mi++) {
       const element = media[mi];
       const native = Array.from(element.textTracks)
         .filter((t) => ["captions", "subtitles"].includes(t.kind))
@@ -272,7 +355,10 @@ export async function collectPage(options: {
             if (["blob:", "https:", "http:"].includes(url.protocol)) {
               try {
                 const controller = new AbortController();
-                const timer = setTimeout(() => controller.abort(), 6000);
+                const timer = setTimeout(
+                  () => controller.abort(),
+                  Math.max(1, Math.min(6000, deadline - Date.now())),
+                );
                 try {
                   const response = await fetch(url.href, {
                     credentials: "same-origin",
@@ -319,20 +405,42 @@ export async function collectPage(options: {
             while (Date.now() < cueDeadline && !track.cues?.length)
               await wait(80);
           }
-          if (vtt)
-            tracks.push({
-              key: `${mi}:${ti}`,
-              label: track.label || track.language || "Captions",
-              language: track.language,
-              vtt,
-            });
-          else if (track.cues?.length) {
-            if (track.cues.length > 50000) {
-              warnings.push("A caption track is too large to export.");
+          if (vtt) {
+            if (captionSize + vtt.length > 5_000_000) {
+              sizeWarning();
               continue;
             }
-            const cues = Array.from(track.cues).map((c, i) => {
+            captionSize += vtt.length;
+            tracks.push({
+              key: `${mi}:${ti}`,
+              label: (track.label || track.language || "Captions").slice(
+                0,
+                1000,
+              ),
+              language: track.language.slice(0, 100),
+              vtt,
+            });
+          } else if (track.cues?.length) {
+            if (
+              track.cues.length > 50000 ||
+              nativeCueCount + track.cues.length > 100000
+            ) {
+              sizeWarning();
+              continue;
+            }
+            const cues: NonNullable<RawTrack["cues"]> = [];
+            let trackSize = 0;
+            let oversized = false;
+            for (const c of Array.from(track.cues)) {
               const text = (c as VTTCue).text || "";
+              const id = (c.id || String(cues.length + 1)).slice(0, 1000);
+              if (
+                text.length > 100000 ||
+                captionSize + trackSize + text.length + id.length > 5_000_000
+              ) {
+                oversized = true;
+                break;
+              }
               const voices = [
                 ...new Set(
                   [...text.matchAll(/<v(?:\.[^\s>]*)?\s+([^>]+)>/g)].map(
@@ -340,18 +448,34 @@ export async function collectPage(options: {
                   ),
                 ),
               ];
-              return {
-                id: c.id || String(i + 1),
+              const speaker =
+                voices.length === 1 ? voices[0].slice(0, 200) : undefined;
+              trackSize += text.length + id.length + (speaker?.length || 0);
+              if (captionSize + trackSize > 5_000_000) {
+                oversized = true;
+                break;
+              }
+              cues.push({
+                id,
                 start: c.startTime,
                 end: c.endTime,
                 text,
-                ...(voices.length === 1 ? { speaker: voices[0] } : {}),
-              };
-            });
+                ...(speaker ? { speaker } : {}),
+              });
+            }
+            if (oversized) {
+              sizeWarning();
+              continue;
+            }
+            captionSize += trackSize;
+            nativeCueCount += cues.length;
             tracks.push({
               key: `${mi}:${ti}`,
-              label: track.label || track.language || "Captions",
-              language: track.language,
+              label: (track.label || track.language || "Captions").slice(
+                0,
+                1000,
+              ),
+              language: track.language.slice(0, 100),
               cues,
             });
           }
@@ -361,9 +485,10 @@ export async function collectPage(options: {
       }
     }
   } finally {
+    restorationDeadline = Date.now() + 1500;
     if (captionMenuTouched && captionButton) {
       if (originalCaption !== undefined) {
-        const items = await openCaptionMenu();
+        const items = await openCaptionMenu(true);
         const previous = items.find(
           (e) => e.textContent?.trim() === originalCaption,
         );
@@ -372,18 +497,21 @@ export async function collectPage(options: {
           await wait(100);
         }
       }
-      if (captionMenuWasExpanded) await openCaptionMenu();
+      if (captionMenuWasExpanded) await openCaptionMenu(true);
       else closeCaptionMenu();
     }
     for (const [track, mode] of originalModes) track.mode = mode;
   }
   const rows = new Map<number, SpeakerRow>();
+  let rowTextSize = 0;
+  let rowLimitReached = false;
   const pendingLabels = new Map<number, string>();
-  const speakerNames = new Set<string>();
+  const speakerNames = new Set<string>(options.resume?.speakerNames || []);
   let sawUnresolvedSpeaker = false;
-  let expectedRows = 0;
+  let expectedRows = options.resume?.expectedRows || 0;
   let completeRows = false;
-  if (isStream && options.speakers && tracks.length) {
+  let rowCursor: RowCursor | undefined;
+  if (isStream && options.speakers && (tracks.length || options.resume)) {
     const opened = transcriptButton?.getAttribute("aria-expanded") === "false";
     const previousPanel = opened
       ? transcriptButton
@@ -395,7 +523,7 @@ export async function collectPage(options: {
     try {
       if (opened) {
         transcriptButton!.click();
-        const panelDeadline = Date.now() + 3500;
+        const panelDeadline = Math.min(deadline, Date.now() + 3500);
         while (
           Date.now() < panelDeadline &&
           !document.getElementById("entry-1")
@@ -410,11 +538,26 @@ export async function collectPage(options: {
           const child = el.querySelector<HTMLElement>('[id^="sub-entry-"]');
           if (!child) continue;
           const total = Number(child.getAttribute("aria-setsize"));
-          if (total > 0 && total <= 50000)
+          if (total > 50000) rowLimitReached = true;
+          if (Number.isSafeInteger(total) && total > 0 && total <= 50000)
             expectedRows = Math.max(expectedRows, total);
           const index = Number(el.id.slice(6));
+          if (
+            !Number.isSafeInteger(index) ||
+            index < 0 ||
+            index >= 50000 ||
+            rows.size >= 50000
+          )
+            continue;
           const text = child.textContent || "";
           if (text.length > 100000) continue;
+          const newSize =
+            rowTextSize + text.length - (rows.get(index)?.text.length || 0);
+          if (newSize > 5_000_000) {
+            rowLimitReached = true;
+            break;
+          }
+          rowTextSize = newSize;
           const header = document.getElementById(`itemHeader-${index}`);
           const timeNode = document.getElementById(`Header-timestamp-${index}`);
           const nameNode =
@@ -489,11 +632,18 @@ export async function collectPage(options: {
       }
       if (scroller) {
         oldScroll = scroller.scrollTop;
-        scroller.scrollTop = 0;
+        scroller.scrollTop = options.resume?.nextScrollTop || 0;
         await wait(120);
         readRows();
         let stableEnd = 0;
-        for (let step = 0; step < 220 && Date.now() < deadline; step++) {
+        let reachedEnd = false;
+        for (
+          ;
+          Date.now() < deadline &&
+          rows.size < 50000 &&
+          rowTextSize < 2_000_000 &&
+          !rowLimitReached;
+        ) {
           readRows();
           if (expectedRows && rows.size >= expectedRows) break;
           const before = scroller.scrollTop;
@@ -504,9 +654,24 @@ export async function collectPage(options: {
           await wait(110);
           readRows();
           if (Math.abs(scroller.scrollTop - before) < 2) {
-            if (++stableEnd >= 3) break;
+            if (++stableEnd >= 3) {
+              reachedEnd = true;
+              break;
+            }
           } else stableEnd = 0;
         }
+        if (
+          !reachedEnd &&
+          !(expectedRows && rows.size >= expectedRows) &&
+          rows.size < 50000 &&
+          !rowLimitReached
+        )
+          rowCursor = {
+            sourceUrl,
+            nextScrollTop: scroller.scrollTop,
+            expectedRows,
+            startedAt,
+          };
       }
       completeRows =
         expectedRows > 0 &&
@@ -514,11 +679,11 @@ export async function collectPage(options: {
         Array.from({ length: expectedRows }, (_, i) => i).every((i) =>
           rows.has(i),
         );
-      if (!completeRows && rows.size)
+      if (!completeRows && rows.size && !rowCursor)
         warnings.push(
           "Some speaker labels could not be loaded. Unmatched captions remain unnamed.",
         );
-      if (!rows.size)
+      if (!rows.size && !rowCursor)
         warnings.push("Speaker labels are not exposed by this page.");
     } finally {
       if (scroller) scroller.scrollTop = oldScroll;
@@ -548,9 +713,22 @@ export async function collectPage(options: {
     warnings.push(
       "Some speaker metadata could not be verified. Those captions keep existing voice tags or remain unnamed.",
     );
-  if (!tracks.length)
+  if (rowCursor) {
+    rowCursor.speakerNames = [...speakerNames];
+    rowCursor.timeUnits = [...units];
+    rowCursor.ambiguousUnits = [...ambiguousUnits];
+  }
+  if (rowLimitReached)
+    warnings.push(
+      "Speaker collection reached its size limit. The available captions are kept; unmatched captions remain unnamed.",
+    );
+  if (!tracks.length && !options.resume)
     warnings.push(
       "No readable captions found. Turn captions on in the player, then refresh GetTranscript. For an embedded video, open its original page.",
+    );
+  if (canonicalSource(location.href) !== sourceUrl)
+    throw new Error(
+      "The recording changed while reading. Refresh to read the current video.",
     );
   return {
     title,
@@ -560,5 +738,9 @@ export async function collectPage(options: {
     expectedRows,
     completeRows,
     warnings,
+    sourceUrl,
+    ...(duration !== undefined ? { duration } : {}),
+    ...(linkedRecordings.length ? { linkedRecordings } : {}),
+    ...(rowCursor ? { rowCursor } : {}),
   };
 }

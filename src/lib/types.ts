@@ -18,6 +18,15 @@ export interface RawTrack {
   vtt?: string;
   cues?: Cue[];
 }
+export interface RowCursor {
+  sourceUrl: string;
+  nextScrollTop: number;
+  expectedRows: number;
+  startedAt?: number;
+  speakerNames?: string[];
+  timeUnits?: [string, number][];
+  ambiguousUnits?: string[];
+}
 export interface PageCapture {
   title: string;
   provider: string;
@@ -26,6 +35,10 @@ export interface PageCapture {
   expectedRows: number;
   completeRows: boolean;
   warnings: string[];
+  sourceUrl?: string;
+  duration?: number;
+  linkedRecordings?: { url: string; title: string }[];
+  rowCursor?: RowCursor;
 }
 export interface Transcript {
   title: string;

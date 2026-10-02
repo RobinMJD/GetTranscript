@@ -131,21 +131,42 @@ export function matchSpeakers(
     g.push(c);
     groups.set(key, g);
   }
-  const candidates = rows.filter(
-    (r) => r.speaker && Number.isFinite(r.start) && r.start! >= 0,
-  );
+  // Index once: long recordings can contain tens of thousands of rows.
+  const candidates = new Map<string, Map<number, SpeakerRow[]>>();
+  for (const row of rows) {
+    if (!row.speaker || !Number.isFinite(row.start) || row.start! < 0) continue;
+    const text = normalizeText(row.text);
+    const buckets = candidates.get(text) || new Map<number, SpeakerRow[]>();
+    const second = Math.floor(row.start!);
+    const bucket = buckets.get(second) || [];
+    bucket.push(row);
+    buckets.set(second, bucket);
+    candidates.set(text, buckets);
+  }
   const assignments = new Map<string, string>();
   const used = new Set<number>();
   for (const group of groups.values()) {
     const text = normalizeText(group.map((c) => c.text).join(" "));
-    const start = Math.min(...group.map((c) => c.start));
-    const matches = candidates.filter(
-      (r) =>
-        !used.has(r.index) &&
-        start - r.start! >= -0.001 &&
-        start - r.start! < 1.001 &&
-        normalizeText(r.text) === text,
+    const start = group.reduce(
+      (earliest, cue) => Math.min(earliest, cue.start),
+      Infinity,
     );
+    const buckets = candidates.get(text);
+    const matches: SpeakerRow[] = [];
+    for (
+      let second = Math.floor(start - 1.001);
+      second <= Math.floor(start + 0.001);
+      second++
+    ) {
+      for (const row of buckets?.get(second) || []) {
+        if (
+          !used.has(row.index) &&
+          start - row.start! >= -0.001 &&
+          start - row.start! < 1.001
+        )
+          matches.push(row);
+      }
+    }
     if (matches.length === 1) {
       used.add(matches[0].index);
       for (const c of group)

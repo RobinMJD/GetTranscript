@@ -468,30 +468,69 @@ test("restricted Store page has a compact explanation and never injects", async 
   await target.goto(fixtureUrl);
   const popup = await openPopup(target);
   await expect(popup.getByRole("button", { name: /Download/ })).toBeEnabled();
-  // Edge handles its real Store URL outside a routed headless fixture. Supply the
-  // URL at the tab API boundary; production restricted-page checking still runs.
-  await context.serviceWorkers()[0].evaluate(() => {
-    const original = chrome.tabs.get;
-    chrome.tabs.get = async (id: number) => {
-      chrome.tabs.get = original;
-      return {
-        ...(await original(id)),
-        url: "https://microsoftedge.microsoft.com/addons/detail/sample",
-      };
+  const tabId = await popup.evaluate(
+    async () => (await chrome.tabs.query({}))[0].id!,
+  );
+  const worker = context.serviceWorkers()[0];
+  // Keep the URL stable through source identity and access checks, just as a real
+  // restricted tab does. Other tabs retain their original API behavior.
+  await worker.evaluate((id) => {
+    const originalGet = chrome.tabs.get;
+    const originalScript = chrome.scripting.executeScript;
+    const state = {
+      calls: 0,
+      restore: () => {
+        chrome.tabs.get = originalGet;
+        chrome.scripting.executeScript = originalScript;
+      },
     };
-  });
-  await popup.getByRole("button", { name: "Refresh transcript" }).click();
-  await expect(
-    popup.getByRole("heading", { name: "Open a video page" }),
-  ).toBeVisible();
-  await expect(popup.getByRole("button", { name: /Download/ })).toHaveCount(0);
-  expect(
-    await popup
-      .locator(".shell")
-      .evaluate((e) => e.getBoundingClientRect().height),
-  ).toBeLessThan(330);
-  await popup.close();
-  await target.close();
+    (
+      globalThis as unknown as { restrictedPageTest: typeof state }
+    ).restrictedPageTest = state;
+    chrome.tabs.get = async (candidate: number) => ({
+      ...(await originalGet(candidate)),
+      ...(candidate === id
+        ? { url: "https://microsoftedge.microsoft.com/addons/detail/sample" }
+        : {}),
+    });
+    chrome.scripting.executeScript = ((
+      injection: chrome.scripting.ScriptInjection<unknown[], unknown>,
+    ) => {
+      if (injection.target.tabId === id) state.calls++;
+      return originalScript(injection);
+    }) as typeof chrome.scripting.executeScript;
+  }, tabId);
+  try {
+    await popup.getByRole("button", { name: "Refresh transcript" }).click();
+    await expect(
+      popup.getByRole("heading", { name: "Open a video page" }),
+    ).toBeVisible();
+    await expect(popup.getByRole("button", { name: /Download/ })).toHaveCount(
+      0,
+    );
+    expect(
+      await popup
+        .locator(".shell")
+        .evaluate((e) => e.getBoundingClientRect().height),
+    ).toBeLessThan(330);
+    expect(
+      await worker.evaluate(
+        () =>
+          (globalThis as unknown as { restrictedPageTest: { calls: number } })
+            .restrictedPageTest.calls,
+      ),
+    ).toBe(0);
+  } finally {
+    await worker.evaluate(() => {
+      const scope = globalThis as unknown as {
+        restrictedPageTest?: { restore(): void };
+      };
+      scope.restrictedPageTest?.restore();
+      delete scope.restrictedPageTest;
+    });
+    await popup.close();
+    await target.close();
+  }
 });
 
 test("failed downloads retain the transcript and allow retry", async () => {

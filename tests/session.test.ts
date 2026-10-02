@@ -56,6 +56,20 @@ async function ready(s: ReturnType<typeof setup>, id = 1) {
   await vi.waitFor(() => expect(s.states.get(id)?.phase).toBe("ready"));
 }
 describe("per-tab background sessions", () => {
+  it("reads a different recording in the same tab and refuses stale exports", async () => {
+    const s = setup();
+    let source = "recording-one";
+    s.deps.sourceIdentity = async () => source;
+    await ready(s);
+    source = "recording-two";
+    await expect(s.sessions.update(1, "en", defaults, true)).rejects.toThrow(
+      "recording changed",
+    );
+    expect(s.deps.download).not.toHaveBeenCalled();
+    const next = await s.sessions.get(1);
+    expect(next.sourceId).toBe(source);
+    expect(s.deps.capture).toHaveBeenCalledTimes(2);
+  });
   it("deduplicates concurrent opens and continues without a popup", async () => {
     const s = setup();
     const [a, b] = await Promise.all([s.sessions.get(1), s.sessions.get(1)]);

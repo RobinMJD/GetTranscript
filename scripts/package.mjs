@@ -50,6 +50,7 @@ if (
   throw new Error("Persistent website access is not part of this release.");
 for (const file of [
   "index.html",
+  "collection.html",
   "background.js",
   "help.html",
   "LICENSE.txt",
@@ -60,7 +61,7 @@ for (const file of [
 for (const [name, bytes] of Object.entries(contents)) {
   if (
     name.endsWith(".js") &&
-    /Weekly project sync|Alex Morgan|Jordan Lee/.test(
+    /Weekly project sync|Alex Morgan|Jordan Lee|Project planning workshop/.test(
       new TextDecoder().decode(bytes),
     )
   )
