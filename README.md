@@ -4,9 +4,7 @@
 
 GetTranscript turns the captions already available on a video page into a file you can keep, edit, search or reuse. Open the extension, choose your format, and download.
 
-Current version: **v1.3.1** · Local test, awaiting user approval · Chrome and Microsoft Edge · Manifest V3
-
-This build must pass a sideload test before publication. It has not been uploaded to either Store, tagged or published as a GitHub release.
+Current version: **v1.3.1** · Chrome and Microsoft Edge · Manifest V3
 
 ![GetTranscript export preview](docs/images/store-1280x800.png)
 
@@ -22,7 +20,7 @@ This build must pass a sideload test before publication. It has not been uploade
 
 ## Install locally
 
-Published versions are available from the [Chrome Web Store](https://chromewebstore.google.com/detail/gjmfapccgoioohohinpdladdjkfnlclk), [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/gocppcckockjkjbiefaobloabljddpfn) and [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases). These links do not establish availability of the local v1.3.1 build. Store updates become available after their respective review processes.
+Published versions are available from the [Chrome Web Store](https://chromewebstore.google.com/detail/gjmfapccgoioohohinpdladdjkfnlclk), [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/gocppcckockjkjbiefaobloabljddpfn) and [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases). Store updates become available after their respective review processes; the public listing may temporarily show an earlier version.
 
 1. Extract the chosen `gettranscript-vX.Y.Z-chromium-stores.zip` release package into a permanent folder.
 2. Open `chrome://extensions` or `edge://extensions` and enable **Developer mode**.
@@ -114,13 +112,13 @@ The separate `test:toolbar` suite opens the actual browser toolbar popup in an i
 
 ## Release process
 
-The current v1.3.1 build is reserved for local sideload testing and user approval. Store upload, release tagging and public publication remain deferred.
+Release candidates are tested as local sideload builds before publication. Store submission and public availability are verified separately for each browser.
 
 One deterministic Chromium ZIP is used unchanged for GitHub Releases, Chrome Web Store and Edge Add-ons. Its root manifest, permissions, required files, version and absence of demo data are checked before release. Rebuilding identical inputs produces identical package bytes.
 
 The release workflow requires an exact `vX.Y.Z` tag on `main`, verifies the version, runs unit, loaded-browser and actual-toolbar tests, audits dependencies and packages once. Publication jobs consume that verified artifact. Store jobs remain disabled until their listing identities and protected environment credentials have been configured. Manual reruns can select GitHub, Chrome or Edge independently.
 
-See [Publishing](docs/PUBLISHING.md), [Store listing](docs/STORE_LISTING.md) and [Architecture](docs/ARCHITECTURE.md). [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases) is the canonical published changelog. No Store links or installation badges are shown until their actual listings exist.
+See [Publishing](docs/PUBLISHING.md), [Store listing](docs/STORE_LISTING.md) and [Architecture](docs/ARCHITECTURE.md). [GitHub Releases](https://github.com/RobinMJD/GetTranscript/releases) is the canonical published changelog. The public Store listings may update at different times while reviews complete.
 
 ## Project layout
 
