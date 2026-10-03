@@ -179,23 +179,15 @@ main > :not(.preview) {
   font-weight: 600;
   margin-top: 10px;
 }
+.field:only-child {
+  grid-column: 1 / -1;
+}
 select {
   height: 36px;
   padding: 0 10px;
   font-size: 13px;
   font-weight: 450;
   width: 100%;
-}
-.detected-language {
-  min-height: 36px;
-  display: flex;
-  align-items: center;
-  padding: 7px 10px;
-  border-radius: 8px;
-  background: #f1f3f6;
-  color: var(--muted);
-  font-weight: 450;
-  overflow-wrap: anywhere;
 }
 select:disabled {
   opacity: 0.65;

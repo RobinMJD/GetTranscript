@@ -361,7 +361,7 @@ export function prepareTranscript(
   key: string,
 ): Transcript {
   const track = capture.tracks.find((t) => t.key === key);
-  if (!track) throw new Error("Choose an available caption language.");
+  if (!track) throw new Error("Choose an available caption track.");
   const cues = track.vtt
     ? parseVtt(track.vtt)
     : validateCues(

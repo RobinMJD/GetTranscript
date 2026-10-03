@@ -322,11 +322,11 @@ export function App() {
             {transcript && (
               <>
                 <div className="fields">
-                  {capture!.tracks.length > 1 ? (
+                  {capture!.tracks.length > 1 && (
                     <label className="field">
-                      Language
+                      Caption track
                       <select
-                        id="language"
+                        id="caption-track"
                         dir="auto"
                         value={key}
                         disabled={saving}
@@ -339,24 +339,6 @@ export function App() {
                         ))}
                       </select>
                     </label>
-                  ) : (
-                    <div className="field">
-                      <span id="language-label">Detected language</span>
-                      <div
-                        className="detected-language"
-                        aria-labelledby="language-label"
-                        dir="auto"
-                        title={
-                          capture!.tracks[0]?.label ||
-                          capture!.tracks[0]?.language ||
-                          "Not specified"
-                        }
-                      >
-                        {capture!.tracks[0]?.label ||
-                          capture!.tracks[0]?.language ||
-                          "Not specified"}
-                      </div>
-                    </div>
                   )}
                   <label className="field">
                     Format

@@ -20,9 +20,9 @@
           Open a video page and select GetTranscript in your browser toolbar.
         </li>
         <li>
-          Choose a format. The detected language is shown automatically; a
-          selector appears if multiple caption tracks are available. Speaker
-          names are preserved when the recording provides them.
+          Choose a format. A Caption track selector appears only if multiple
+          separate tracks are available. Speaker names are preserved when the
+          recording provides them.
         </li>
         <li>
           Select Download. The file goes to your browser’s downloads folder.
@@ -45,7 +45,8 @@
           by the page. GetTranscript does not guess filenames.
         </li>
         <li>
-          Check the order and each part’s caption language, then select
+          Check the order and choose a caption track if several are available,
+          then select
           <strong>Read recordings</strong>. Keep the source video tab open:
           collection visits each recording there and then restores its starting
           page and player state, unless you have navigated elsewhere.
@@ -82,12 +83,11 @@
         choose separate files.
       </p>
       <p>
-        Names are resolved separately within each recording. To combine
-        different caption languages, explicitly enable
-        <strong>Allow different languages</strong>; the text is not translated.
-        Markdown, text and JSON can include links to the recordings. Combined
-        JSON uses schema version 2 with part metadata, local cue times and
-        timeline offsets.
+        Names are resolved separately within each recording. Spoken languages
+        can change within or between recordings without blocking combination;
+        the original text is preserved without translation. Markdown, text and
+        JSON can include links to the recordings. Combined JSON uses schema
+        version 2 with part metadata, local cue times and timeline offsets.
       </p>
       <h2>Choose your format</h2>
       <dl>
@@ -127,8 +127,9 @@
         On Stream, GetTranscript first reads the recording's available
         transcript and speaker names directly, without scrolling through the
         transcript panel. If that is unavailable, it reads the player's captions
-        and panel instead. A transcript with several spoken languages can appear
-        as <strong>Spoken languages</strong>; its text stays together.
+        and panel instead. A transcript with several spoken languages stays
+        together; the interface does not assign one language to the
+        conversation.
       </p>
       <p>
         If no captions appear, enable them in the player and refresh

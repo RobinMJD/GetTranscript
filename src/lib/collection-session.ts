@@ -277,7 +277,7 @@ export class Collections {
         } else if (request.action === "part") {
           if (request.selectedTrack !== undefined) {
             if (!part.tracks.some((t) => t.key === request.selectedTrack))
-              throw new Error("Choose an available caption language.");
+              throw new Error("Choose an available caption track.");
             part.selectedTrack = request.selectedTrack;
           }
           if (request.offset !== undefined) {
@@ -371,8 +371,7 @@ export class Collections {
       !validOptions(o) ||
       !["combined", "individual"].includes(o.mode) ||
       !["continuous", "custom", "local"].includes(o.timeline) ||
-      typeof o.includeSources !== "boolean" ||
-      typeof o.allowMixedLanguages !== "boolean"
+      typeof o.includeSources !== "boolean"
     )
       throw new Error("Choose valid export options.");
     state.options = { ...o };

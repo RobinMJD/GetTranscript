@@ -183,10 +183,13 @@ test("real toolbar popup stays compact and usable through every state", async ()
       1,
     );
     expect(
+      await popup.read(`document.body.innerText.includes('Detected language')`),
+    ).toBe(false);
+    expect(
       await popup.read(
-        `document.querySelector('.detected-language').textContent`,
+        `document.querySelector('#format').getBoundingClientRect().width===document.querySelector('.fields').getBoundingClientRect().width`,
       ),
-    ).toBe("English");
+    ).toBe(true);
     await screenshot("popup-ready.png");
     await popup.close();
     await video.evaluate(() => {
@@ -294,8 +297,13 @@ test("real toolbar popup stays compact and usable through every state", async ()
         `Array.from(document.querySelectorAll('.preview-row p')).find(e=>e.textContent.includes('مراجعة')).closest('[dir]').getAttribute('dir')`,
       ),
     ).toBe("auto");
+    expect(
+      await popup.read(
+        `document.querySelector('#caption-track').closest('label').firstChild.textContent.trim()`,
+      ),
+    ).toBe("Caption track");
     await popup.read(
-      `{const language=document.querySelector('select');language.selectedIndex=1;language.dispatchEvent(new Event('change',{bubbles:true}));}`,
+      `{const track=document.querySelector('#caption-track');track.selectedIndex=1;track.dispatchEvent(new Event('change',{bubbles:true}));}`,
     );
     await expect
       .poll(() =>

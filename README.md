@@ -15,7 +15,7 @@ This build must pass a sideload test before publication. It has not been uploade
 - **Five formats:** WebVTT, SRT, plain text, Markdown and structured JSON.
 - **Speaker names:** preserve names supplied directly by Microsoft Stream and existing caption voice tags; match transcript-panel labels using complete text and timestamps when needed.
 - **Precise timing:** preserve millisecond start and end times, including overlapping speakers.
-- **Detected language:** one caption track appears as read-only information; multiple tracks get a language selector. All readable languages exposed by the supported player are supported, including right-to-left scripts.
+- **Multilingual transcripts:** preserve the original text even when spoken languages change during a recording. A caption track selector appears only when the player offers multiple separate tracks; all readable languages and right-to-left scripts are supported.
 - **Readable subtitles:** optionally display speaker names in VTT caption text; SRT uses visible names when speaker inclusion is enabled.
 - **Small, focused interface:** preview the first captions, remember format preferences, and get a clear result when a download completes.
 - **Meetings split into recordings:** collect up to 20 parts in a separate workspace, then export one combined transcript or a ZIP of individual files.
@@ -35,7 +35,7 @@ For source builds, load `dist/` after running the commands below.
 
 1. Open the original video page and select GetTranscript in the toolbar.
 2. Let it read the captions and available speaker names. You can close the popup; the job continues. Reopen it to see the same result.
-3. Choose the format and speaker options. A language selector appears only when multiple caption tracks are available.
+3. Choose the format and speaker options. A **Caption track** selector appears only when multiple separate tracks are available.
 4. Select **Download**. The file is saved through your browser’s download manager.
 
 If no captions are found, turn captions on in the player and refresh GetTranscript. For a video embedded from another origin, open the video's original page.
@@ -64,11 +64,11 @@ Choose **One combined transcript** in any of the five formats, or **Separate fil
 
 ![Combine recordings workspace](docs/images/store-collection-1280x800.png)
 
-Speaker labels are resolved separately within each recording before combining. Different caption languages require the explicit **Allow different languages** option for a combined export; the text is not translated. Markdown, text and JSON can include recording links. Combined JSON uses schema version 2, with per-part metadata, local cue timings and timeline offsets; single-recording JSON remains schema version 1.
+Speaker labels are resolved separately within each recording before combining. Recordings combine even when spoken languages or caption-track language tags differ; the original text is preserved without translation. Markdown, text and JSON can include recording links. Combined JSON uses schema version 2, with per-part metadata, local cue timings and timeline offsets; single-recording JSON remains schema version 1.
 
 ## Supported pages and limits
 
-**Microsoft Stream on SharePoint:** standard recording pages with readable transcripts. GetTranscript first reads structured transcript data for the current recording, including native speaker names, without scrolling transcript rows. If that data is unavailable, it uses the player's caption tracks and transcript panel. There is no language whitelist; the interface remains in English. A transcript containing several spoken languages remains one track labeled **Spoken languages** when Stream provides no single track language.
+**Microsoft Stream on SharePoint:** standard recording pages with readable transcripts. GetTranscript first reads structured transcript data for the current recording, including native speaker names, without scrolling transcript rows. If that data is unavailable, it uses the player's caption tracks and transcript panel. There is no language whitelist; the interface remains in English. A transcript containing several spoken languages remains together. Track language tags are source metadata, not a claim about the language of every caption.
 
 **Other HTML5 video and audio players:** readable WebVTT resources or native text tracks. Same-origin frames are inspected. Cross-origin embedded players should be opened separately. Proprietary players, closed shadow roots and sites that do not expose captions are not covered.
 

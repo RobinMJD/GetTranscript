@@ -553,7 +553,7 @@ test("failed downloads retain the transcript and allow retry", async () => {
   await expect(popup.getByRole("button", { name: /Download/ })).toBeEnabled();
   await expect(
     popup.getByText("Detected language", { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(popup.getByRole("combobox")).toHaveCount(1);
   await popup.getByRole("button", { name: /Download/ }).click();
   await expect(popup.getByRole("status")).toHaveText(
@@ -712,8 +712,8 @@ test("popup closure preserves a running scan, completed result, options and down
   await expect(popup.getByRole("button", { name: /Download/ })).toBeEnabled();
   await expect(
     popup.getByText("Detected language", { exact: true }),
-  ).toBeVisible();
-  await expect(popup.getByLabel(/^Language/)).toHaveCount(0);
+  ).toHaveCount(0);
+  await expect(popup.getByLabel(/^Caption track/)).toHaveCount(0);
   // One direct Stream probe plus one DOM fallback belong to a single capture.
   const captureScriptCalls = await worker.evaluate(
     () => (globalThis as any).testScriptCalls,

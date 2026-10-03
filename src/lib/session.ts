@@ -211,7 +211,7 @@ export class Sessions {
         !validOptions(options) ||
         !state.capture.tracks.some((t) => t.key === key)
       )
-        throw new Error("Choose an available caption language and format.");
+        throw new Error("Choose an available caption track and format.");
       state.key = key;
       state.options = { ...options };
       state.error = "";

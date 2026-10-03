@@ -156,21 +156,10 @@ export function App() {
   const hasErrors = parts.some((p) => p.status === "error");
   const previewPart = ready.find((p) => p.id === previewId) || ready[0];
   const previewTrack = previewPart && selected(previewPart);
-  const languages = new Set(
-    ready.map(
-      (p) =>
-        (selected(p)?.language || "").trim().replace(/_/g, "-").toLowerCase() ||
-        "und",
-    ),
-  );
   const localSubtitles =
     options.mode === "combined" &&
     options.timeline === "local" &&
     (options.format === "vtt" || options.format === "srt");
-  const mixedBlocked =
-    options.mode === "combined" &&
-    languages.size > 1 &&
-    !options.allowMixedLanguages;
   const missingDuration =
     options.mode === "combined" &&
     options.timeline !== "local" &&
@@ -211,12 +200,7 @@ export function App() {
                     ? "Reading paused"
                     : `${ready.length} of ${parts.length} recordings ready`;
   const canDownload =
-    complete &&
-    !locked &&
-    !localSubtitles &&
-    !mixedBlocked &&
-    !missingDuration &&
-    !invalidStart;
+    complete && !locked && !localSubtitles && !missingDuration && !invalidStart;
 
   function apply(state: RecordingCollection) {
     const old = current.current;
@@ -582,13 +566,6 @@ export function App() {
                                 {durationLabel(part.duration)}
                               </span>
                               {track && (
-                                <span dir="auto">
-                                  {track.label ||
-                                    track.language ||
-                                    "Language not specified"}
-                                </span>
-                              )}
-                              {track && (
                                 <span>
                                   {track.transcript.cues.length.toLocaleString()}{" "}
                                   captions
@@ -665,9 +642,9 @@ export function App() {
                           )}
                           {part.tracks.length > 1 && (
                             <label className="track-choice">
-                              Language
+                              Caption track
                               <select
-                                aria-label={`Language for part ${i + 1}`}
+                                aria-label={`Caption track for part ${i + 1}`}
                                 dir="auto"
                                 value={part.selectedTrack}
                                 disabled={locked}
@@ -938,26 +915,6 @@ export function App() {
                             <small>In Markdown, text and JSON exports.</small>
                           </span>
                         </label>
-                        <label className="check-row">
-                          <input
-                            type="checkbox"
-                            checked={options.allowMixedLanguages}
-                            disabled={
-                              optionsLocked || options.mode === "individual"
-                            }
-                            onChange={(e) =>
-                              changeOptions({
-                                allowMixedLanguages: e.target.checked,
-                              })
-                            }
-                          />
-                          <span>
-                            Allow different languages
-                            <small>
-                              Keep the original text. No translation.
-                            </small>
-                          </span>
-                        </label>
                         <div className="reset-area">
                           {resetOpen ? (
                             <>
@@ -999,13 +956,6 @@ export function App() {
                       <p className="notice" role="alert">
                         VTT and SRT need a continuous timeline. Choose another
                         timeline or separate files.
-                      </p>
-                    )}
-                    {mixedBlocked && (
-                      <p className="notice" role="alert">
-                        These recordings use different languages. Choose
-                        matching tracks, export separate files, or allow
-                        different languages in Advanced options.
                       </p>
                     )}
                     {missingDuration && (

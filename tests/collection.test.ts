@@ -247,23 +247,48 @@ describe("collection exports", () => {
         expect(parseVtt(result[1].text)[0].start).toBe(19.2);
     },
   );
-  it("requires a deliberate choice before combining different caption languages", () => {
-    const input = collection();
-    input.parts[1] = readyPart(1, "ar");
-    expect(() => exportCollection(input)).toThrow("languages differ");
-    input.options.allowMixedLanguages = true;
-    expect(exportCollection(input)[0].filename).toBe("Long meeting.mul.md");
-    input.options.allowMixedLanguages = false;
-    input.options.mode = "individual";
-    expect(exportCollection(input)[1].filename).toContain(".ar.md");
-  });
+  it.each<Format>(["vtt", "srt", "md", "txt", "json"])(
+    "combines different caption language tags without changing the original text in %s",
+    (format) => {
+      const input = collection(format);
+      input.parts = [
+        readyPart(0, "fr-FR"),
+        readyPart(1, "en-US"),
+        readyPart(2, "fr-FR"),
+      ];
+      const text = [
+        "Bonjour à tous. 日本語 مرحبًا.",
+        "Let's switch to English.",
+        "Revenons au français.",
+      ];
+      input.parts.forEach((part, i) => {
+        part.tracks[0].transcript.cues[0].text = text[i];
+      });
+      // Already saved collections may still contain the obsolete option.
+      Object.assign(input.options, { allowMixedLanguages: false });
+      const [combined] = exportCollection(input);
+      expect(combined.filename).toBe(`Long meeting.mul.${format}`);
+      for (const original of text) expect(combined.text).toContain(original);
+      expect(combined.text.indexOf(text[0])).toBeLessThan(
+        combined.text.indexOf(text[1]),
+      );
+      expect(combined.text.indexOf(text[1])).toBeLessThan(
+        combined.text.indexOf(text[2]),
+      );
+      input.options.mode = "individual";
+      const individual = exportCollection(input);
+      expect(individual[1].filename).toContain(`.en-US.${format}`);
+      for (let i = 0; i < text.length; i++)
+        expect(individual[i].text).toContain(text[i]);
+    },
+  );
   it("does not silently skip failed, missing or duplicate parts", () => {
     const input = collection();
     input.parts[1].status = "error";
     expect(() => exportCollection(input)).toThrow("Every recording");
     input.parts[1].status = "ready";
     input.parts[1].selectedTrack = "missing";
-    expect(() => exportCollection(input)).toThrow("available language");
+    expect(() => exportCollection(input)).toThrow("available caption track");
     input.parts[1] = { ...readyPart(0), id: "different-id" };
     expect(() => exportCollection(input)).toThrow("same recording");
   });

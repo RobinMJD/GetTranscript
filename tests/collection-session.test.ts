@@ -87,6 +87,27 @@ const complete = async (s: ReturnType<typeof setup>) =>
   vi.waitFor(() => expect(s.states.get(7)?.phase).toBe("ready"));
 
 describe("recording collection jobs", () => {
+  it("keeps saved captions and options from collections with the obsolete language flag", async () => {
+    const s = setup();
+    await s.send("add", { urls: [second] });
+    await s.send("start");
+    await complete(s);
+    const original = structuredClone(s.states.get(7)!);
+    Object.assign(s.states.get(7)!.options, { allowMixedLanguages: false });
+    s.states.get(7)!.parts[1].tracks[0].language = "fr";
+    const saved = structuredClone(s.states.get(7)!);
+    await s.send("get");
+    expect(s.states.get(7)!.parts).toEqual(saved.parts);
+    await s.send("options", {
+      options: { ...original.options, format: "vtt" },
+    });
+    expect(s.states.get(7)!.parts).toEqual(saved.parts);
+    expect(s.states.get(7)!.options.format).toBe("vtt");
+    expect(s.states.get(7)!.options).not.toHaveProperty("allowMixedLanguages");
+    await s.send("download");
+    await vi.waitFor(() => expect(s.deps.download).toHaveBeenCalledOnce());
+    expect(s.deps.capture).toHaveBeenCalledTimes(2);
+  });
   it("cancels queued reading promptly and resumes without overtaking the current page scan", async () => {
     const s = setup();
     const work = new TabWork();

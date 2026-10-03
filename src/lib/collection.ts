@@ -30,7 +30,6 @@ export interface CollectionOptions extends ExportOptions {
   mode: "combined" | "individual";
   timeline: "continuous" | "custom" | "local";
   includeSources: boolean;
-  allowMixedLanguages: boolean;
 }
 export interface RecordingCollection {
   tabId: number;
@@ -54,7 +53,6 @@ export const defaultCollectionOptions: CollectionOptions = {
   speakers: true,
   visibleNames: false,
   includeSources: true,
-  allowMixedLanguages: false,
 };
 export const MAX_COLLECTION_PARTS = 20;
 export const MAX_COLLECTION_CUES = 50_000;
@@ -167,10 +165,7 @@ export function prepareCollectionTracks(
       );
     return {
       key: String(track.key),
-      label: String(track.label || track.language || "Detected language").slice(
-        0,
-        150,
-      ),
+      label: String(track.label || track.language || "Captions").slice(0, 150),
       language: String(track.language || "").slice(0, 30),
       transcript: {
         title: String(capture.title || "Transcript").slice(0, 250),
@@ -248,7 +243,9 @@ export function exportCollection(
       (candidate) => candidate.key === part.selectedTrack,
     );
     if (!track)
-      throw new Error(`Choose an available language for part ${index + 1}.`);
+      throw new Error(
+        `Choose an available caption track for part ${index + 1}.`,
+      );
     const cues = validateCues(track.transcript.cues);
     if (
       needsTimeline &&
@@ -287,10 +284,6 @@ export function exportCollection(
   const languages = [
     ...new Set(tracks.map((track) => languageKey(track.language))),
   ];
-  if (languages.length > 1 && !options.allowMixedLanguages)
-    throw new Error(
-      "The selected caption languages differ between recordings. Choose matching tracks or allow mixed languages in Advanced options.",
-    );
   if (options.timeline === "local" && ["vtt", "srt"].includes(options.format))
     throw new Error(
       "Combined VTT and SRT need a continuous timeline. Use individual files to retain each recording’s original timestamps.",
