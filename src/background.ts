@@ -36,6 +36,10 @@ async function whileWorking<T>(job: () => Promise<T>): Promise<T> {
     clearInterval(keepAlive);
   }
 }
+async function exportPreferences() {
+  const { preferences } = await chrome.storage.local.get("preferences");
+  return validOptions(preferences) ? preferences : { ...defaults };
+}
 const tabWork = new TabWork();
 const sessions = new Sessions({
   read: async (tabId) =>
@@ -44,10 +48,7 @@ const sessions = new Sessions({
   write: async (state) =>
     chrome.storage.session.set({ [sessionKey(state.tabId)]: state }),
   remove: async (tabId) => chrome.storage.session.remove(sessionKey(tabId)),
-  preferences: async () => {
-    const { preferences } = await chrome.storage.local.get("preferences");
-    return validOptions(preferences) ? preferences : { ...defaults };
-  },
+  preferences: exportPreferences,
   savePreferences: async (preferences) =>
     chrome.storage.local.set({ preferences }),
   capture: (tabId) =>
@@ -66,6 +67,7 @@ const sessions = new Sessions({
     (await chrome.downloads.search({ id }))[0]?.state,
 });
 const collections = new Collections({
+  preferences: exportPreferences,
   read: async (id) =>
     (await chrome.storage.session.get(collectionKey(id)))[collectionKey(id)] as
       RecordingCollection | undefined,
@@ -207,7 +209,7 @@ const collections = new Collections({
   },
   singleBusy: (id) => sessions.busy(id),
   working: whileWorking,
-  exclusive: (id, job) => tabWork.run(id, job),
+  exclusive: (id, job, signal) => tabWork.run(id, job, signal),
   download: async (files, title, archive) => {
     if (!archive && files.length === 1)
       return [

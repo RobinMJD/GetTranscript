@@ -9,6 +9,7 @@ import {
   type RecordingCollection,
 } from "../src/lib/collection";
 import type { PageCapture } from "../src/lib/types";
+import { TabWork } from "../src/lib/tab-work";
 
 const first = "https://video.example/part-one";
 const second = "https://video.example/part-two";
@@ -86,6 +87,137 @@ const complete = async (s: ReturnType<typeof setup>) =>
   vi.waitFor(() => expect(s.states.get(7)?.phase).toBe("ready"));
 
 describe("recording collection jobs", () => {
+  it("cancels queued reading promptly and resumes without overtaking the current page scan", async () => {
+    const s = setup();
+    const work = new TabWork();
+    s.deps.exclusive = (id, job, signal) => work.run(id, job, signal);
+    let release!: () => void;
+    const previous = work.run(
+      7,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    await s.send("add", { urls: [second] });
+    await s.send("start");
+    expect(s.states.get(7)).toMatchObject({
+      phase: "reading",
+      busy: true,
+      activity: "waiting",
+    });
+    await s.send("options", {
+      options: { ...s.states.get(7)!.options, format: "vtt" },
+    });
+    await s.send("pause");
+    await vi.waitFor(() => expect(s.manager.busy(7)).toBe(false));
+    expect(s.states.get(7)).toMatchObject({
+      phase: "paused",
+      busy: false,
+      options: { format: "vtt" },
+    });
+    expect(s.states.get(7)!.activity).toBeUndefined();
+    expect(s.deps.capture).not.toHaveBeenCalled();
+    expect(s.deps.navigate).not.toHaveBeenCalled();
+    await s.send("start");
+    await s.send("get");
+    expect(s.manager.busy(7)).toBe(true);
+    expect(s.states.get(7)!.phase).toBe("reading");
+    expect(s.deps.capture).not.toHaveBeenCalled();
+    release();
+    await previous;
+    await complete(s);
+    expect(s.deps.capture).toHaveBeenCalledTimes(2);
+    expect(s.states.get(7)!.options.format).toBe("vtt");
+  });
+  it("drops a queued collection on source closure without later navigating or restoring data", async () => {
+    const s = setup();
+    const work = new TabWork();
+    s.deps.exclusive = (id, job, signal) => work.run(id, job, signal);
+    let release!: () => void;
+    const previous = work.run(
+      7,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    await s.send("start");
+    await s.manager.remove(7);
+    await vi.waitFor(() => expect(s.manager.busy(7)).toBe(false));
+    release();
+    await previous;
+    await work.run(7, async () => {});
+    expect(s.states.size).toBe(0);
+    expect(s.checkpoints.size).toBe(0);
+    expect(s.deps.capture).not.toHaveBeenCalled();
+    expect(s.deps.navigate).not.toHaveBeenCalled();
+  });
+  it("inherits popup preferences only when creating a collection", async () => {
+    const s = setup();
+    s.deps.preferences = async () => ({
+      format: "srt",
+      speakers: false,
+      visibleNames: true,
+    });
+    await s.send("get");
+    expect(s.states.get(7)!.options).toMatchObject({
+      format: "srt",
+      speakers: false,
+      visibleNames: true,
+    });
+    await s.send("options", {
+      options: { ...s.states.get(7)!.options, format: "vtt" },
+    });
+    await s.send("get");
+    expect(s.states.get(7)!.options.format).toBe("vtt");
+  });
+  it("allows export options while reading and pausing, but freezes them during download", async () => {
+    const s = setup();
+    let finish!: (c: PageCapture) => void;
+    s.deps.capture = vi.fn(
+      () =>
+        new Promise<PageCapture>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await s.send("start");
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    await s.send("options", {
+      options: { ...s.states.get(7)!.options, format: "vtt" },
+    });
+    expect(s.states.get(7)).toMatchObject({
+      phase: "reading",
+      busy: true,
+      options: { format: "vtt" },
+    });
+    await expect(s.send("add", { urls: [second] })).rejects.toThrow("Wait");
+    await s.send("pause");
+    await s.send("options", {
+      options: { ...s.states.get(7)!.options, speakers: false },
+    });
+    expect(s.states.get(7)).toMatchObject({
+      phase: "paused",
+      busy: true,
+      options: { format: "vtt", speakers: false },
+    });
+    finish(capture(first));
+    await vi.waitFor(() => expect(s.manager.busy(7)).toBe(false));
+    s.deps.capture = vi.fn(async () => capture(first));
+    await s.send("start");
+    await complete(s);
+    s.deps.downloadState = async () => "in_progress";
+    await s.send("download");
+    await vi.waitFor(() => expect(s.states.get(7)?.downloadIds).toEqual([123]));
+    await expect(
+      s.send("options", {
+        options: { ...s.states.get(7)!.options, format: "md" },
+      }),
+    ).rejects.toThrow("download");
+    expect(s.states.get(7)!.options.format).toBe("vtt");
+  });
   it("refreshes every part without removing the collection or resetting its order", async () => {
     const s = setup();
     await s.send("add", { urls: [second] });

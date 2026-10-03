@@ -684,9 +684,9 @@ test("popup closure preserves a running scan, completed result, options and down
   const worker = context.serviceWorkers()[0];
   await worker.evaluate(() => {
     const original = chrome.scripting.executeScript;
-    (globalThis as any).testScans = 0;
+    (globalThis as any).testScriptCalls = 0;
     chrome.scripting.executeScript = async (...args: any[]) => {
-      (globalThis as any).testScans++;
+      (globalThis as any).testScriptCalls++;
       await new Promise((resolve) => setTimeout(resolve, 1200));
       return (original as any)(...args);
     };
@@ -714,7 +714,11 @@ test("popup closure preserves a running scan, completed result, options and down
     popup.getByText("Detected language", { exact: true }),
   ).toBeVisible();
   await expect(popup.getByLabel(/^Language/)).toHaveCount(0);
-  expect(await worker.evaluate(() => (globalThis as any).testScans)).toBe(1);
+  // One direct Stream probe plus one DOM fallback belong to a single capture.
+  const captureScriptCalls = await worker.evaluate(
+    () => (globalThis as any).testScriptCalls,
+  );
+  expect(captureScriptCalls).toBe(2);
   await popup.getByLabel(/^Format/).selectOption("md");
   await popup.getByRole("switch", { name: /Include speaker names/ }).uncheck();
   await worker.evaluate(() => {
@@ -743,12 +747,16 @@ test("popup closure preserves a running scan, completed result, options and down
     popup.getByRole("switch", { name: /Include speaker names/ }),
   ).not.toBeChecked();
   await expect(popup.locator(".source h2")).toHaveText("Weekly project sync");
-  expect(await worker.evaluate(() => (globalThis as any).testScans)).toBe(1);
+  expect(await worker.evaluate(() => (globalThis as any).testScriptCalls)).toBe(
+    captureScriptCalls,
+  );
   await popup.getByRole("button", { name: "Refresh transcript" }).click();
   await expect(popup.locator(".source h2")).toHaveText(
     "A different title after collection",
   );
-  expect(await worker.evaluate(() => (globalThis as any).testScans)).toBe(2);
+  expect(await worker.evaluate(() => (globalThis as any).testScriptCalls)).toBe(
+    captureScriptCalls * 2,
+  );
   await popup.close();
   await video.close();
   await expect

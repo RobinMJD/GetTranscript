@@ -1,16 +1,18 @@
 # GetTranscript privacy policy
 
-Effective October 3, 2026. Version 1.3.0.
+Effective October 3, 2026. Version 1.3.1.
 
 GetTranscript runs locally in your browser. It has no developer-operated service, analytics, advertising or account system. The developer does not receive your transcripts.
 
 ## What the extension accesses
 
-When you open GetTranscript, temporary active-tab access permits it to inspect the current video page, its readable caption tracks and its transcript panel. This may include the page title, recording URL, media duration, caption language, spoken text, timestamps and existing speaker labels. Same-origin embedded documents may be inspected as part of that page.
+When you open GetTranscript, temporary active-tab access permits it to inspect the current video page, its readable caption tracks, its transcript panel and the current Stream recording's structured transcript data. This may include the page title, recording URL, media duration, caption language, spoken text, timestamps and existing speaker labels. Same-origin embedded documents may be inspected as part of that page.
 
 If you use Combine recordings, you choose recording links from the same website as the source tab. Find links on source reads existing Stream links exposed by that page; it does not guess filenames or scan a recording library. Reading visits your selected recordings in the source tab. The extension temporarily remembers playback position, paused state, volume, mute and speed to restore the starting player after collection, unless you have navigated elsewhere. Existing website sign-in and access permissions still apply.
 
-Referenced caption resources may be fetched directly from their existing host. Same-origin requests use the browser’s existing authentication; cross-origin requests do not include credentials. GetTranscript does not collect, store or export authentication cookies or tokens, and it does not create a separate Microsoft application.
+Referenced caption resources may be fetched directly from their existing host. Same-origin requests use the browser’s existing authentication; cross-origin requests do not include credentials. For Stream, GetTranscript reads item metadata and visible transcript content on the current page's origin. If needed, it briefly observes the player's requests for that exact recording and reuses an authorization header already issued to the player. It may open the transcript panel to trigger the player's normal request, then restores the changed controls. This does not grant new access or override a denied request.
+
+Authentication values are used only in memory during that read, then discarded. They are never written to extension storage, included in exports or sent to the developer. GetTranscript does not read the browser's cookie store, decrypt download payloads or create a separate Microsoft application. It restores the temporary request observer when the read ends.
 
 ## Storage and sharing
 

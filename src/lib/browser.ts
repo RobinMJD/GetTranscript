@@ -1,4 +1,5 @@
 import { collectPage } from "../extractor/collect";
+import { collectStreamPage } from "../extractor/stream";
 import { matchSpeakers, parseVtt, plainText, validateCues } from "./transcript";
 import type { PageCapture, SpeakerRow, Transcript } from "./types";
 
@@ -76,7 +77,8 @@ function validateCapture(value: unknown): asserts value is PageCapture {
       !text(track.key, 200) ||
       trackKeys.has(track.key) ||
       !text(track.label, 1000) ||
-      !text(track.language, 100)
+      !text(track.language, 100) ||
+      (track.textFormat !== undefined && track.textFormat !== "plain")
     )
       fail();
     trackKeys.add(track.key);
@@ -201,6 +203,36 @@ export async function captureTab(
       "The recording changed while reading. Refresh to read the current video.",
     );
   if (initialCapture) validateCapture(initialCapture);
+  const page = new URL(source);
+  if (
+    !initialCapture &&
+    /(^|\.)sharepoint\.(com|us|de|cn)$/.test(page.hostname) &&
+    /\/stream\.aspx$/i.test(page.pathname)
+  ) {
+    // Structured entries include the player's own speaker names and do not
+    // depend on rendering thousands of virtualized rows in a visible tab.
+    const [injection] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      func: collectStreamPage,
+      args: [],
+    });
+    const direct = injection?.result;
+    if (direct) {
+      validateCapture(direct);
+      if (
+        direct.sourceUrl !== source ||
+        sourceIdentity((await chrome.tabs.get(tabId)).url || "") !== source
+      )
+        throw new Error(
+          "The recording changed while reading. Refresh to read the current video.",
+        );
+      if (onProgress) await onProgress(direct);
+      if (shouldContinue && !(await shouldContinue()))
+        throw new Error("Reading was canceled.");
+      return direct;
+    }
+  }
   // Paused time does not consume a resumed operation's active collection budget.
   // Every chunk in this invocation still shares this single bounded deadline.
   const deadline = Date.now() + 10 * 60_000;
@@ -310,10 +342,18 @@ export async function captureTab(
       warnings,
       rowCursor: completeRows || rowLimitReached ? undefined : result.rowCursor,
     };
+    // Keep the just-finished chunk when Pause arrives during an injection.
+    if (onProgress) await onProgress(capture);
     if (shouldContinue && !(await shouldContinue()))
       throw new Error("Reading was canceled.");
-    if (onProgress) await onProgress(capture);
   }
+  const availabilityWarning = capture.warnings.find((warning) =>
+    warning.startsWith(
+      "This player has not exposed captions in the background.",
+    ),
+  );
+  if (!capture.tracks.length && availabilityWarning)
+    throw new Error(availabilityWarning);
   return capture;
 }
 export function prepareTranscript(
@@ -325,7 +365,10 @@ export function prepareTranscript(
   const cues = track.vtt
     ? parseVtt(track.vtt)
     : validateCues(
-        (track.cues || []).map((c) => ({ ...c, text: plainText(c.text) })),
+        (track.cues || []).map((c) => ({
+          ...c,
+          text: track.textFormat === "plain" ? c.text : plainText(c.text),
+        })),
       );
   const result = matchSpeakers(cues, capture.rows);
   const warnings = [...capture.warnings];

@@ -1,6 +1,6 @@
 {
   "name": "gettranscript",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "private": true,
   "type": "module",
   "description": "Keep the transcript. Keep the speaker names.",
@@ -12,6 +12,7 @@
     "check:version": "node scripts/check-version.mjs",
     "verify": "npm run check:version && npm run type-check && npm test && npm run build",
     "package:stores": "node scripts/package.mjs",
+    "package:dev": "node scripts/package-dev.mjs",
     "test:browser": "playwright test",
     "test:toolbar": "playwright test -c playwright.toolbar.config.ts"
   },

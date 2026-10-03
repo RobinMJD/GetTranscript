@@ -11,8 +11,10 @@ import path from "node:path";
 import { generateKeyPairSync, createHash } from "node:crypto";
 import { unzipSync, strFromU8 } from "fflate";
 import type { RecordingCollection } from "../../src/lib/collection";
+import { nativeContext } from "./native-context";
 
 let context: BrowserContext, folder: string, extensionId: string;
+let closeNative: (() => Promise<void>) | undefined;
 const errors: string[] = [];
 const source =
   "https://collection.sharepoint.com/personal/demo/_layouts/15/stream.aspx";
@@ -53,17 +55,22 @@ test.beforeAll(async () => {
       },
     }),
   );
-  context = await chromium.launchPersistentContext(
-    path.join(folder, "profile"),
-    {
-      channel: "chromium",
-      executablePath: process.env.BROWSER_BIN,
-      headless: true,
-      acceptDownloads: true,
-      downloadsPath: path.join(folder, "downloads"),
-      args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
-    },
-  );
+  if (process.env.HEADED === "1") {
+    const native = await nativeContext(path.join(folder, "profile"), ext);
+    context = native.context;
+    closeNative = native.close;
+  } else
+    context = await chromium.launchPersistentContext(
+      path.join(folder, "profile"),
+      {
+        channel: "chromium",
+        executablePath: process.env.BROWSER_BIN,
+        headless: process.env.HEADED !== "1",
+        acceptDownloads: true,
+        downloadsPath: path.join(folder, "downloads"),
+        args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
+      },
+    );
   context.on("page", (page) =>
     page.on("pageerror", (e) => errors.push(e.message)),
   );
@@ -97,7 +104,8 @@ test.beforeAll(async () => {
   });
 });
 test.afterAll(async () => {
-  await context?.close();
+  if (closeNative) await closeNative();
+  else await context?.close();
   if (folder) await rm(folder, { recursive: true, force: true });
   expect(errors).toEqual([]);
 });
@@ -136,6 +144,7 @@ test("collection reads three distinct recordings, restores source, exports combi
   const id = await tabId(video);
   let page = await workspace(video, id);
   await expect(page.locator(".part")).toHaveCount(1);
+  await page.getByLabel("Format", { exact: true }).selectOption("md");
   await expect(page.locator(".advanced")).not.toHaveAttribute("open");
   await expect(page.getByLabel("Paste recording links")).toHaveCount(0);
   await page
@@ -385,3 +394,312 @@ test("popup More options opens the collection workspace for its source video", a
   await popup.close();
   await video.close();
 });
+
+test("a queued collection pauses immediately and keeps format editable during a slow popup read", async () => {
+  test.setTimeout(90000);
+  const video = await context.newPage();
+  await video.goto(urls[0]);
+  const id = await tabId(video);
+  const worker = context.serviceWorkers()[0];
+  await worker.evaluate(() => {
+    const original = chrome.scripting.executeScript;
+    const state = globalThis as typeof globalThis & {
+      queuedReadCalls: number;
+      releaseQueuedRead: () => void;
+      restoreQueuedRead: () => void;
+    };
+    state.queuedReadCalls = 0;
+    const gate = new Promise<void>((resolve) => {
+      state.releaseQueuedRead = resolve;
+    });
+    chrome.scripting.executeScript = (async (
+      ...args: Parameters<typeof original>
+    ) => {
+      state.queuedReadCalls++;
+      if (state.queuedReadCalls === 1) await gate;
+      return original(...args);
+    }) as unknown as typeof original;
+    state.restoreQueuedRead = () => {
+      state.releaseQueuedRead();
+      chrome.scripting.executeScript = original;
+    };
+  });
+  let navigationCount = 0;
+  video.on("framenavigated", (frame) => {
+    if (frame === video.mainFrame()) navigationCount++;
+  });
+  const popup = await context.newPage();
+  await popup.addInitScript(
+    ({ id, url }) => {
+      chrome.tabs.query = async () => [
+        {
+          id,
+          url,
+          active: true,
+          index: 0,
+          pinned: false,
+          highlighted: true,
+          incognito: false,
+          selected: true,
+          windowId: 1,
+          discarded: false,
+          autoDiscardable: true,
+          frozen: false,
+          groupId: -1,
+          lastAccessed: Date.now(),
+        },
+      ];
+    },
+    { id, url: urls[0] },
+  );
+  let page: Page | undefined;
+  try {
+    await popup.goto(`chrome-extension://${extensionId}/index.html`);
+    await expect(
+      popup.getByRole("heading", { name: "Reading this page…", exact: true }),
+    ).toBeVisible();
+    await expect
+      .poll(() =>
+        worker.evaluate(
+          () =>
+            (globalThis as typeof globalThis & { queuedReadCalls: number })
+              .queuedReadCalls,
+        ),
+      )
+      .toBe(1);
+    page = await workspace(video, id);
+    await page
+      .getByRole("button", { name: "Add recordings", exact: true })
+      .click();
+    await page
+      .getByLabel("Paste recording links")
+      .fill(`${urls[1]}\n${urls[2]}`);
+    await page.getByRole("button", { name: "Add links", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Read recordings", exact: true })
+      .click();
+    await expect(
+      page.getByText("Waiting for the current page read…", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Add recordings", exact: true }),
+    ).toBeDisabled();
+    await expect(page.getByLabel("Format", { exact: true })).toBeEnabled();
+    await expect(page.getByLabel("Export", { exact: true })).toBeEnabled();
+    await page.getByLabel("Format", { exact: true }).selectOption("srt");
+    await expect(page.getByLabel("Format", { exact: true })).toHaveValue("srt");
+    await page.getByLabel("Format", { exact: true }).selectOption("vtt");
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await expect(page.getByText("Reading paused", { exact: true })).toBeVisible(
+      { timeout: 3000 },
+    );
+    await expect
+      .poll(
+        () =>
+          page!.evaluate(async (id) => {
+            const value = (
+              await chrome.storage.session.get(`collection:${id}`)
+            )[`collection:${id}`] as RecordingCollection;
+            return {
+              phase: value.phase,
+              busy: value.busy,
+              format: value.options.format,
+              statuses: value.parts.map((p) => p.status),
+            };
+          }, id),
+        { timeout: 3000 },
+      )
+      .toEqual({
+        phase: "paused",
+        busy: false,
+        format: "vtt",
+        statuses: ["pending", "pending", "pending"],
+      });
+    await expect(page.getByLabel("Format", { exact: true })).toBeEnabled();
+    await expect(
+      page.getByRole("button", { name: "Continue reading", exact: true }),
+    ).toBeEnabled();
+    expect(navigationCount).toBe(0);
+    expect(
+      await worker.evaluate(
+        () =>
+          (globalThis as typeof globalThis & { queuedReadCalls: number })
+            .queuedReadCalls,
+      ),
+    ).toBe(1);
+    await worker.evaluate(() =>
+      (
+        globalThis as typeof globalThis & { releaseQueuedRead: () => void }
+      ).releaseQueuedRead(),
+    );
+    await expect(
+      popup.getByRole("button", { name: /^Download/ }),
+    ).toBeEnabled();
+    await worker.evaluate(() =>
+      (
+        globalThis as typeof globalThis & { restoreQueuedRead: () => void }
+      ).restoreQueuedRead(),
+    );
+    await page
+      .getByRole("button", { name: "Continue reading", exact: true })
+      .click();
+    await expect(
+      page.getByText("All recordings are ready", { exact: true }),
+    ).toBeVisible({ timeout: 60000 });
+    await expect(
+      page.getByRole("button", { name: "Download VTT", exact: true }),
+    ).toBeEnabled();
+    await expect(page.getByLabel("Format", { exact: true })).toHaveValue("vtt");
+    await expect(video).toHaveURL(urls[0]);
+  } finally {
+    await worker
+      .evaluate(() =>
+        (
+          globalThis as typeof globalThis & { restoreQueuedRead?: () => void }
+        ).restoreQueuedRead?.(),
+      )
+      .catch(() => {});
+    await page?.close();
+    await popup.close();
+    await video.close();
+  }
+});
+
+const coldCueCount = 120;
+const coldCaption = (index: number) => `Cold recording caption ${index + 1}.`;
+const coldVtt =
+  "WEBVTT\n\n" +
+  Array.from({ length: coldCueCount }, (_, index) => {
+    const start = index * 2;
+    const stamp = (seconds: number) =>
+      `00:${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}.200`;
+    return `cold/${index + 1}\n${stamp(start)} --> ${stamp(start + 1)}\n${coldCaption(index)}\n`;
+  }).join("\n");
+async function coldStream(video: Page) {
+  await video.route("https://collection.sharepoint.com/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/cold-captions.vtt")
+      return route.fulfill({
+        status: 200,
+        contentType: "text/vtt;charset=utf-8",
+        body: coldVtt,
+      });
+    if (!url.searchParams.has("coldFixture")) return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: "text/html;charset=utf-8",
+      body: `<!doctype html><html><head><meta charset="utf-8"><title>Cold transcript workshop</title></head><body><video controls></video><script>
+      const names = ['Alex Morgan', 'Jordan Lee', 'Casey Chen'];
+      const media = document.querySelector('video');
+      Object.defineProperty(media, 'duration', { value: 250 });
+      setTimeout(() => {
+        const button = document.createElement('button');
+        button.id = 'transcript-toggle';
+        button.setAttribute('aria-controls', 'transcript-pane');
+        button.innerHTML = '<i data-icon-name="SlideText"></i>記録';
+        button.onclick = () => {
+          const old = document.getElementById('transcript-pane');
+          if (old) { old.remove(); return; }
+          setTimeout(() => {
+            if (!media.querySelector('track')) {
+              const track = document.createElement('track'); track.kind = 'subtitles'; track.label = 'English'; track.srclang = 'en'; track.src = '/cold-captions.vtt'; media.append(track);
+            }
+            const panel = document.createElement('section'); panel.id = 'transcript-pane';
+            const scroller = document.createElement('div'); scroller.id = 'cold-scroll'; scroller.style.cssText = 'height:220px;overflow-y:auto;position:relative';
+            const canvas = document.createElement('div'); canvas.style.cssText = 'height:${coldCueCount * 60}px;position:relative';
+            scroller.append(canvas); panel.append(scroller); document.body.append(panel);
+            const render = () => {
+              const start = Math.max(0, Math.floor(scroller.scrollTop / 60) - 2); canvas.replaceChildren();
+              for (let i = start; i < Math.min(${coldCueCount}, start + 9); i++) {
+                const row = document.createElement('div'); row.id = 'entry-' + i; row.style.cssText = 'position:absolute;top:' + i * 60 + 'px;height:60px';
+                const header = document.createElement('div'); header.id = 'itemHeader-' + i;
+                const speaker = document.createElement('span'); speaker.textContent = names[i % 3];
+                const time = document.createElement('span'); time.id = 'Header-timestamp-' + i; time.textContent = Math.floor(i * 2 / 60) + ':' + String(i * 2 % 60).padStart(2,'0');
+                const timing = document.createElement('div'); timing.append(time); header.append(speaker, timing);
+                const text = document.createElement('div'); text.id = 'sub-entry-' + i; text.setAttribute('aria-setsize', '${coldCueCount}'); text.textContent = 'Cold recording caption ' + (i + 1) + '.';
+                row.append(header, text); canvas.append(row);
+              }
+            };
+            scroller.addEventListener('scroll', () => { if (!document.hidden) requestAnimationFrame(render); });
+            document.addEventListener('visibilitychange', () => { if (!document.hidden && panel.isConnected) requestAnimationFrame(render); });
+            render();
+          }, 250);
+        };
+        document.body.append(button);
+      }, 900);
+    </script></body></html>`,
+    });
+  });
+  await video.goto(`${urls[0]}&coldFixture=1`);
+}
+async function storedCollection(page: Page, id: number) {
+  return page.evaluate(
+    async (id) =>
+      (await chrome.storage.session.get(`collection:${id}`))[
+        `collection:${id}`
+      ] as RecordingCollection,
+    id,
+  );
+}
+
+for (const sourceVisibility of ["visible", "hidden"] as const) {
+  test(`cold Stream DOM fallback preserves captions with source ${sourceVisibility}`, async () => {
+    test.setTimeout(60000);
+    test.skip(
+      sourceVisibility === "hidden" && process.env.HEADED !== "1",
+      "A real background tab requires a headed browser; run with HEADED=1.",
+    );
+    const video = await context.newPage();
+    await coldStream(video);
+    const id = await tabId(video);
+    const page = await workspace(video, id);
+    if (sourceVisibility === "visible") await video.bringToFront();
+    else await page.bringToFront();
+    await page.evaluate(
+      async ({ id, visible }) => {
+        const tab = visible ? { id } : await chrome.tabs.getCurrent();
+        await chrome.tabs.update(tab!.id!, { active: true });
+      },
+      { id, visible: sourceVisibility === "visible" },
+    );
+    await expect
+      .poll(() => video.evaluate(() => document.visibilityState))
+      .toBe(sourceVisibility);
+    await expect(video.locator("#transcript-pane")).toHaveCount(0);
+    await expect(video.locator("track")).toHaveCount(0);
+    // Begin through the extension's real message boundary without changing the
+    // foreground tab: this isolates visibility from the workspace interaction.
+    await page.evaluate(
+      (tabId) =>
+        chrome.runtime.sendMessage({
+          target: "collection",
+          action: "start",
+          tabId,
+        }),
+      id,
+    );
+    await expect
+      .poll(async () => (await storedCollection(page, id)).phase, {
+        timeout: sourceVisibility === "hidden" ? 25000 : 45000,
+      })
+      .toBe("ready");
+    const state = await storedCollection(page, id);
+    const transcript = state.parts[0].tracks[0].transcript;
+    expect(transcript.cues).toHaveLength(coldCueCount);
+    expect(transcript.cues.at(-1)?.text).toBe(coldCaption(coldCueCount - 1));
+    const named = transcript.cues.filter((cue) => cue.speaker).length;
+    if (sourceVisibility === "visible") {
+      expect(named).toBe(coldCueCount);
+      expect(new Set(transcript.cues.map((cue) => cue.speaker)).size).toBe(3);
+    } else {
+      expect(named).toBeLessThan(coldCueCount);
+      expect(transcript.warnings.join(" ")).toMatch(
+        /visible|foreground|background|speaker/i,
+      );
+      await expect(page.locator(".part-warning")).not.toHaveCount(0);
+    }
+    await expect(video.locator("#transcript-pane")).toHaveCount(0);
+    await page.close();
+    await video.close();
+  });
+}

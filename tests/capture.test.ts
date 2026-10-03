@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { captureTab } from "../src/lib/browser";
+import { captureTab, prepareTranscript } from "../src/lib/browser";
+import { prepareCollectionTracks } from "../src/lib/collection";
 import { collectPage } from "../src/extractor/collect";
+import { collectStreamPage } from "../src/extractor/stream";
 import type { PageCapture } from "../src/lib/types";
 
 const source =
@@ -30,7 +32,7 @@ const capture: PageCapture = {
   warnings: [],
   rowCursor: { sourceUrl: source, nextScrollTop: 400, expectedRows: 3 },
 };
-function setup(results: PageCapture[]) {
+function setup(results: PageCapture[], direct?: PageCapture) {
   const executeScript = vi.fn();
   results.forEach((result) =>
     executeScript.mockResolvedValueOnce([{ result }]),
@@ -39,7 +41,12 @@ function setup(results: PageCapture[]) {
     tabs: {
       get: vi.fn(async () => ({ id: 1, url: source + "&referrer=ignored" })),
     },
-    scripting: { executeScript },
+    scripting: {
+      executeScript: (args: { func: unknown }) =>
+        args.func === collectStreamPage
+          ? Promise.resolve([{ result: direct }])
+          : executeScript(args),
+    },
   });
   return executeScript;
 }
@@ -48,6 +55,51 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("chunked recording collection", () => {
+  it("uses structured Stream entries without starting a DOM scan", async () => {
+    const direct = { ...capture, rowCursor: undefined, completeRows: true };
+    const execute = setup([], direct);
+    const progress = vi.fn(async () => {});
+    expect(await captureTab(1, progress)).toEqual(direct);
+    expect(progress).toHaveBeenCalledWith(direct);
+    expect(execute).not.toHaveBeenCalled();
+  });
+  it("preserves literal markup and entity text in structured transcript entries", () => {
+    const text = "Use <configuration> and the literal &amp; value.";
+    const value: PageCapture = {
+      ...capture,
+      rows: [],
+      tracks: [
+        {
+          key: "structured",
+          label: "English",
+          language: "en",
+          textFormat: "plain",
+          cues: [{ id: "1", start: 1, end: 2, text, speaker: "Alex" }],
+        },
+      ],
+    };
+    expect(prepareTranscript(value, "structured").cues[0].text).toBe(text);
+    expect(prepareCollectionTracks(value)[0].transcript.cues[0].text).toBe(
+      text,
+    );
+  });
+  it("validates structured capture and preserves actionable fallback errors", async () => {
+    setup([], { ...capture, duration: Infinity });
+    await expect(captureTab(1)).rejects.toThrow("caption metadata");
+    setup([
+      {
+        ...capture,
+        tracks: [],
+        rowCursor: undefined,
+        warnings: [
+          "This player has not exposed captions in the background. Open the video tab and refresh.",
+        ],
+      },
+    ]);
+    await expect(captureTab(1)).rejects.toThrow(
+      "Open the video tab and refresh.",
+    );
+  });
   it("merges overlap, keeps tracks once and reports resumable progress", async () => {
     const execute = setup([
       capture,
@@ -97,6 +149,18 @@ describe("chunked recording collection", () => {
     const progress = vi.fn(async () => {});
     await expect(captureTab(1, progress, allowed)).rejects.toThrow("canceled");
     expect(execute).toHaveBeenCalledTimes(1);
+    expect(progress).toHaveBeenCalledWith(capture);
+  });
+  it("checkpoints the current chunk when Pause arrives during its injection", async () => {
+    const execute = setup([capture]);
+    const allowed = vi
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const progress = vi.fn(async () => {});
+    await expect(captureTab(1, progress, allowed)).rejects.toThrow("canceled");
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(progress).toHaveBeenCalledTimes(1);
     expect(progress).toHaveBeenCalledWith(capture);
   });
   it("rejects changed recordings and conflicting overlapping rows", async () => {

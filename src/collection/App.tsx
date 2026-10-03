@@ -149,6 +149,7 @@ export function App() {
   const reading = collection?.phase === "reading";
   const saving = collection?.download === "saving";
   const locked = pending || reading || saving || closed || !!collection?.busy;
+  const optionsLocked = pending || saving || closed;
   const parts = collection?.parts || [];
   const ready = parts.filter((p) => p.status === "ready");
   const complete = parts.length > 0 && ready.length === parts.length;
@@ -188,6 +189,27 @@ export function App() {
     options.mode === "combined" &&
     options.timeline === "custom" &&
     invalidOffsets.some((id) => parts.some((p) => p.id === id));
+  const activePart = parts.findIndex((part) => part.status === "reading");
+  const progressTitle =
+    collection?.activity === "restoring"
+      ? "Restoring the source video…"
+      : collection?.busy && collection.phase === "paused"
+        ? collection.activity === "waiting"
+          ? "Canceling the queued read…"
+          : "Pausing the current recording…"
+        : reading && collection?.activity === "waiting"
+          ? "Waiting for the current page read…"
+          : reading && collection?.activity === "opening"
+            ? `Opening recording ${Math.max(0, activePart) + 1} of ${parts.length}…`
+            : reading && activePart >= 0
+              ? `Reading part ${activePart + 1} of ${parts.length}`
+              : reading
+                ? "Preparing recordings…"
+                : complete
+                  ? "All recordings are ready"
+                  : collection?.phase === "paused"
+                    ? "Reading paused"
+                    : `${ready.length} of ${parts.length} recordings ready`;
   const canDownload =
     complete &&
     !locked &&
@@ -687,25 +709,17 @@ export function App() {
                 )}
                 <div className="collection-progress">
                   <div>
-                    <strong>
-                      {collection.busy && collection.phase === "paused"
-                        ? "Finishing the current step…"
-                        : reading && complete
-                          ? "Restoring the source video…"
-                          : reading
-                            ? `Reading part ${Math.max(1, parts.findIndex((p) => p.status === "reading") + 1)} of ${parts.length}`
-                            : complete
-                              ? "All recordings are ready"
-                              : collection.phase === "paused"
-                                ? "Reading paused"
-                                : `${ready.length} of ${parts.length} recordings ready`}
-                    </strong>
+                    <strong>{progressTitle}</strong>
                     <p>
-                      {reading
-                        ? "You can close this workspace. Reading will continue."
-                        : totalDuration !== undefined
-                          ? `${durationLabel(totalDuration)} of recorded video`
-                          : "Each recording keeps its own speakers and captions."}
+                      {collection.activity === "restoring"
+                        ? "Returning your video tab to its starting page and position."
+                        : reading && collection.activity === "waiting"
+                          ? "You can choose your export options or pause while the page finishes its current read."
+                          : reading
+                            ? "You can close this workspace. Reading will continue."
+                            : totalDuration !== undefined
+                              ? `${durationLabel(totalDuration)} of recorded video`
+                              : "Each recording keeps its own speakers and captions."}
                     </p>
                   </div>
                   {reading ? (
@@ -759,7 +773,7 @@ export function App() {
                       <select
                         aria-label="Export"
                         value={options.mode}
-                        disabled={locked}
+                        disabled={optionsLocked}
                         onChange={(e) =>
                           changeOptions({
                             mode: e.target.value as CollectionOptions["mode"],
@@ -779,7 +793,7 @@ export function App() {
                       <select
                         aria-label="Format"
                         value={options.format}
-                        disabled={locked}
+                        disabled={optionsLocked}
                         onChange={(e) =>
                           changeOptions({ format: e.target.value as Format })
                         }
@@ -800,6 +814,12 @@ export function App() {
                             ? "One timeline using your chosen start times."
                             : "One timeline, with each part placed after the previous video."}
                     </p>
+                    {(reading || collection.busy) && (
+                      <p className="field-help options-hint">
+                        You can change export options while recordings are being
+                        read.
+                      </p>
+                    )}
                     <details className="advanced">
                       <summary>
                         <Icon name="settings" size={17} />
@@ -812,7 +832,9 @@ export function App() {
                           <select
                             aria-label="Timeline"
                             value={options.timeline}
-                            disabled={locked || options.mode === "individual"}
+                            disabled={
+                              optionsLocked || options.mode === "individual"
+                            }
                             onChange={(e) =>
                               changeOptions({
                                 timeline: e.target
@@ -869,7 +891,7 @@ export function App() {
                           <input
                             type="checkbox"
                             checked={options.speakers}
-                            disabled={locked}
+                            disabled={optionsLocked}
                             onChange={(e) =>
                               changeOptions({ speakers: e.target.checked })
                             }
@@ -886,7 +908,7 @@ export function App() {
                             <input
                               type="checkbox"
                               checked={options.visibleNames}
-                              disabled={locked || !options.speakers}
+                              disabled={optionsLocked || !options.speakers}
                               onChange={(e) =>
                                 changeOptions({
                                   visibleNames: e.target.checked,
@@ -901,7 +923,7 @@ export function App() {
                             type="checkbox"
                             checked={options.includeSources}
                             disabled={
-                              locked ||
+                              optionsLocked ||
                               options.mode === "individual" ||
                               ["vtt", "srt"].includes(options.format)
                             }
@@ -920,7 +942,9 @@ export function App() {
                           <input
                             type="checkbox"
                             checked={options.allowMixedLanguages}
-                            disabled={locked || options.mode === "individual"}
+                            disabled={
+                              optionsLocked || options.mode === "individual"
+                            }
                             onChange={(e) =>
                               changeOptions({
                                 allowMixedLanguages: e.target.checked,

@@ -41,6 +41,7 @@ export interface RecordingCollection {
   parts: RecordingPart[];
   phase: "idle" | "reading" | "paused" | "ready" | "error";
   busy?: boolean;
+  activity?: "waiting" | "opening" | "reading" | "restoring";
   error: string;
   options: CollectionOptions;
   download: "idle" | "saving" | "complete" | "error";
@@ -148,7 +149,7 @@ export function prepareCollectionTracks(
       : validateCues(
           (track.cues || []).map((cue) => ({
             ...cue,
-            text: plainText(cue.text),
+            text: track.textFormat === "plain" ? cue.text : plainText(cue.text),
           })),
         );
     const result = matchSpeakers(cues, capture.rows);

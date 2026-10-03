@@ -2,7 +2,9 @@
 
 ## Flow
 
-Toolbar popup → per-tab background session → temporary active tab → self-contained MAIN-world collector → validated transcript model → exact speaker matching → selected serializer → browser download manager.
+Toolbar popup → per-tab background session → temporary active tab → self-contained MAIN-world collector → validated transcript model → native speaker names or exact panel matching → selected serializer → browser download manager.
+
+The v1.3.1 build is undergoing local sideload testing. User approval is required before Store upload, release tagging or public publication.
 
 An MV3 service worker owns collection and export. `chrome.storage.session` holds each tab’s job, result, selected track, options and download status; extension views subscribe to changes and reconnect without launching duplicate work. Worker suspension retains completed sessions. A bounded API heartbeat runs only during a user-requested operation. Interrupted single-page scans report their interruption; multipart scans retain a checkpoint and resume on request.
 
@@ -10,13 +12,17 @@ Short state transactions are serialized. Each scan has a generation token; stale
 
 A download uses a data URL independent of the view lifetime. Its ID is stored in the session and completion is reconciled through `downloads.onChanged` and on reopening, including completion before the ID was stored. The UI reports success only after `chrome.downloads` confirms completion. Background messages are accepted only from the corresponding packaged popup or collection page, with request fields validated; page scripts cannot invoke them.
 
-`collectPage` is self-contained because `chrome.scripting.executeScript` serializes the function. No imported functions or lexical module state may be referenced from its body. Keep this invariant when refactoring and validate the production build through the loaded-extension suite.
+`collectStreamPage` and `collectPage` are self-contained because `chrome.scripting.executeScript` serializes each function. No imported functions or lexical module state may be referenced from their bodies. Keep this invariant when refactoring and validate the production build through the loaded-extension suite.
 
 ## Caption sources
 
-Native HTML media tracks are inspected in the main document and accessible same-origin frames. A readable referenced WebVTT track is preferred; loaded native cues are the fallback. Disabled tracks can briefly enter hidden mode to load their captions, and their original mode is restored. Stream may first need its existing caption menu to instantiate each language’s blob track. Caption choices are matched to native track metadata, including lazily mounted menus. Selection, track modes and menu visibility are restored.
+On SharePoint Stream pages, `collectStreamPage` first validates the current page's `g_fileInfo[".spItemUrl"]` as an exact same-origin drive/item endpoint. It requests v2.1 item metadata expanded with `media/transcripts`, then reads the visible transcript IDs through `media/transcripts/{id}/streamContent` in JSON format. It never follows `temporaryDownloadUrl`, decrypts a payload or enumerates neighboring files. Requests, response bytes, cue counts, text sizes and source identity are bounded and validated; only sanitized caption data is returned.
 
-The collector does not derive alternate network endpoints, request cookie access or perform cryptographic extraction. It reads track resources referenced by the DOM and existing transcript labels.
+Requests first use normal same-origin credentials and an existing `tempauth` query value, if the item URL supplies one. If the endpoint returns 401, a short-lived fetch observer can reuse an Authorization or x-authorization Bearer header already issued by the player for that same origin and drive/item. A structural transcript control may be opened to let the player request its transcript. The same endpoint is retried with that credential; a 403 does not trigger an authentication retry. Credentials stay within the invocation, are never returned or stored, and the observer and changed panel state are restored in `finally`. No cookie API or additional extension permission is used.
+
+Structured entries provide native per-cue speaker names and numeric times parsed from offsets with up to seven fractional digits. Metadata video duration is converted from milliseconds to seconds. A missing track language can be derived from one spoken language; multiple spoken languages remain a single `und` track labeled “Spoken languages.” This path needs no virtualized transcript scrolling. Unsupported or inaccessible structured data falls back to the normal player collector.
+
+The player collector inspects native HTML media tracks in the main document and accessible same-origin frames. A readable referenced WebVTT track is preferred; loaded native cues are the fallback. Disabled tracks can briefly enter hidden mode to load their captions, and their original mode is restored. Stream may first need its existing caption menu to instantiate each language’s blob track. Caption choices are matched to native track metadata, including lazily mounted menus. Selection, track modes and menu visibility are restored.
 
 ## Recording collections
 
@@ -24,15 +30,21 @@ The popup’s More options opens a separate `collection.html` workspace bound to
 
 Collection jobs navigate the already authorized source tab through the selected recordings. Navigation and capture identities are checked before associating content with a part. The starting page and available player state (position, pause, volume, mute and speed) are restored after reading unless the user navigated elsewhere. Per-tab exclusive work prevents a popup scan from manipulating controls during collection. Opening the workspace can reuse a completed popup capture only when its source identity matches. Closing the workspace leaves work running; Pause stops between chunks, Continue resumes its temporary checkpoint, and Retry targets a failed part. Refresh collection retains links, order, title and options while clearing captured content, checkpoints and download status.
 
+Queued tab leases are abortable. Pausing a collection that is waiting behind a popup scan settles that queued operation without waiting for the scan or allowing canceled navigation to run later. The lease of the active operation remains intact. Per-run tokens guard job registration and cleanup, so an older canceled run cannot clear the busy state of a newer run. Cleanup also handles cancellation before collection execution begins.
+
+Collection progress distinguishes waiting for a tab lease, opening a recording, reading captions and restoring the starting page. New collections inherit saved popup export format and speaker preferences. Export-format changes can be saved while extraction is running; they update output choices without restarting collection or modifying its source order. Downloads remain gated on completed parts and valid timing/language choices.
+
 Completed parts retain prepared captions and verified names. The current raw capture/checkpoint is temporary and is discarded after preparing that part. Collections have a 6 MB serialized storage guard, leaving room for progress and other tabs; browser session-storage quota failures are reported without deleting unrelated results. Closing the source tab clears the collection even if its workspace remains open. No transcript or recording-link database is written to persistent storage.
 
 ## Speaker matching
+
+Native structured Stream speaker names are retained on their own cues, without inferring identity from a speaker ID or matching a different entry. Missing display names remain unnamed. The following row-matching logic applies to the player fallback.
 
 `SpeakerRow` carries separate resolved speaker names and numeric start times. Numeric header timestamps are preferred. Unicode decimal digits are normalized; localized accessibility durations use unit forms derived from the document locale and numeric reference rows. There is no English/French label parser. Structural control IDs and icon shapes locate Stream controls independently of translated button text.
 
 Stream subtitle IDs identify fragments of a larger utterance. Fragments with the same utterance ID are grouped and their text is concatenated. A name is assigned only if one unused transcript row has exactly matching Unicode-normalized text, ignoring whitespace, and a displayed start time within the same whole second. This handles overlapping speakers without nearest-neighbor guesses.
 
-Virtualized transcript rows are collected in overlapping scroll increments, in chunks with an 18-second work deadline and a shared restoration allowance. The cursor carries source identity, next scroll position and learned locale metadata. `captureTab` merges rows by index, rejects conflicting content, retains tracks once and can report checkpoints to its caller. Each active invocation shares a 10-minute budget across chunks; an explicit resume starts a fresh active budget. Speaker traversal stops at 50,000 rows or 5 million row-text characters, with smaller per-chunk text budgets. Expected row count and coverage are checked; this measures speaker-label coverage, not proof that a live caption feed contains an entire meeting. Scroll and panel state are restored in `finally` blocks. Missing structures or limits produce explicit incomplete-coverage information.
+Virtualized transcript rows are collected in overlapping scroll increments, in chunks with an 18-second work deadline and a shared restoration allowance. Closed transcript controls are opened when necessary. The cursor carries source identity, next scroll position and learned locale metadata. `captureTab` merges rows by index, rejects conflicting content, retains tracks once and can report checkpoints to its caller. Each active invocation shares a 10-minute budget across chunks; an explicit resume starts a fresh active budget. Speaker traversal stops at 50,000 rows or 5 million row-text characters, with smaller per-chunk text budgets. Expected row count and coverage are checked; this measures speaker-label coverage, not proof that a live caption feed contains an entire meeting. Some players stop rendering new rows in hidden tabs; stalled or partial coverage is reported explicitly. Scroll and panel state are restored in `finally` blocks. Missing structures or limits produce explicit incomplete-coverage information.
 
 Speaker matching runs separately for each recording and selected language before timelines are combined. Cue IDs are namespaced for collection exports, so IDs and row indexes reused by another part cannot cross-assign speakers.
 

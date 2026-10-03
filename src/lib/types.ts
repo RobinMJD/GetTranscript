@@ -17,6 +17,7 @@ export interface RawTrack {
   language: string;
   vtt?: string;
   cues?: Cue[];
+  textFormat?: "plain";
 }
 export interface RowCursor {
   sourceUrl: string;

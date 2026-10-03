@@ -10,6 +10,10 @@
     <main>
       <h1>GetTranscript</h1>
       <p class="lead">Keep the transcript. Keep the speaker names.</p>
+      <p>
+        Version 1.3.1 is a local test build awaiting your approval before Store
+        upload or public release.
+      </p>
       <h2>Export in three steps</h2>
       <ol>
         <li>
@@ -18,7 +22,7 @@
         <li>
           Choose a format. The detected language is shown automatically; a
           selector appears if multiple caption tracks are available. Speaker
-          labels are matched automatically.
+          names are preserved when the recording provides them.
         </li>
         <li>
           Select Download. The file goes to your browser’s downloads folder.
@@ -60,10 +64,19 @@
         clearing captured content for a fresh read.
       </p>
       <p>
+        Progress tells you whether GetTranscript is waiting for the source tab,
+        opening a recording, reading captions or restoring the starting page.
+        Pause cancels a collection that is still waiting for the tab
+        immediately; an active step finishes safely before pausing. A new
+        collection starts with your saved popup format and speaker preferences.
+        You can change the export format while reading continues; your choice is
+        used for download.
+      </p>
+      <p>
         Under Advanced options, <strong>Join end to end</strong> uses full video
         durations, including silence; it does not infer gaps between recordings.
-        <strong>Set start times</strong> accepts HH:MM:SS.mmm or seconds to preserve
-        known gaps without overlapping parts.
+        <strong>Set start times</strong> accepts HH:MM:SS.mmm or seconds to
+        preserve known gaps without overlapping parts.
         <strong>Keep each part’s original times</strong> is available for
         combined Markdown, text and JSON. For subtitles with original times,
         choose separate files.
@@ -111,6 +124,13 @@
         cross-origin embeds are not supported.
       </p>
       <p>
+        On Stream, GetTranscript first reads the recording's available
+        transcript and speaker names directly, without scrolling through the
+        transcript panel. If that is unavailable, it reads the player's captions
+        and panel instead. A transcript with several spoken languages can appear
+        as <strong>Spoken languages</strong>; its text stays together.
+      </p>
+      <p>
         If no captions appear, enable them in the player and refresh
         GetTranscript. Open embedded videos on their original page.
         GetTranscript does not translate, transcribe audio or infer who is
@@ -119,17 +139,20 @@
       </p>
       <h2>Speaker names</h2>
       <p>
-        Names come from existing caption tags or the meeting’s transcript
-        labels. GetTranscript matches complete utterance text and timestamps. It
-        leaves unmatched captions unnamed. It does not correct the original
-        service’s attribution errors.
+        Names come from the recording's transcript data, existing caption tags
+        or the meeting’s transcript labels. Panel labels require a complete
+        text-and-time match. Captions without a reliable name remain unnamed.
+        GetTranscript does not correct the original service’s attribution
+        errors.
       </p>
       <p>
-        Long transcript rows are read in resumable steps of about 18 seconds,
-        restoring the player’s controls and scroll position between steps. An
-        active capture has a 10-minute budget; continuing after a pause starts a
-        fresh active budget. Collection and text-size limits are reported in the
-        result, and unmatched captions remain unnamed.
+        When the player fallback is needed, long transcript rows are read in
+        resumable steps of about 18 seconds, restoring controls and scroll
+        position between steps. Some players stop loading further rows while
+        their tab is in the background; incomplete speaker coverage is shown in
+        the result. An active capture has a 10-minute budget; continuing after a
+        pause starts a fresh active budget. Collection and text-size limits are
+        reported, and unmatched captions remain unnamed.
       </p>
       <h2>Your privacy</h2>
       <p>
@@ -143,10 +166,12 @@
       </p>
       <p>
         Temporary active-tab access is granted when you open GetTranscript. The
-        extension may load caption resources referenced by that page, briefly
-        reveal captions or scroll the transcript, and then restore those
-        controls. Existing sign-in, server permissions and content availability
-        still apply. Do not export content you are not authorized to keep.
+        extension may read the current recording's transcript data or referenced
+        captions, briefly reveal captions or scroll the transcript, and then
+        restore those controls. Existing sign-in, server permissions and content
+        availability still apply. Authentication values are never saved in
+        extension storage or included in exports. Do not export content you are
+        not authorized to keep.
       </p>
       <h2>Permissions</h2>
       <p>
@@ -171,7 +196,7 @@
           >Privacy policy</a
         >
       </p>
-      <p class="version">GetTranscript 1.3.0 · Local processing</p>
+      <p class="version">GetTranscript 1.3.1 · Local test · Local processing</p>
     </main>
   </body>
 </html>

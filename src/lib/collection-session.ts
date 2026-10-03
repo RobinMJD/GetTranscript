@@ -10,7 +10,7 @@ import {
   type RecordingCollection,
   type CollectionOptions,
 } from "./collection";
-import type { PageCapture } from "./types";
+import type { ExportOptions, PageCapture } from "./types";
 import { friendlyError, validOptions } from "./session";
 
 export type CollectionRequest = {
@@ -56,6 +56,7 @@ export interface CollectionDependencies {
   readCheckpoint(id: number): Promise<CollectionCheckpoint | undefined>;
   source(id: number): Promise<{ url: string; title: string }>;
   cachedCapture?(id: number): Promise<PageCapture | undefined>;
+  preferences?(): Promise<ExportOptions>;
   rememberPlayer?(id: number): Promise<unknown>;
   restorePlayer?(id: number, state: unknown): Promise<void>;
   navigate(id: number, url: string): Promise<void>;
@@ -74,13 +75,17 @@ export interface CollectionDependencies {
   ): Promise<number[]>;
   downloadState(id: number): Promise<string | undefined>;
   working<T>(job: () => Promise<T>): Promise<T>;
-  exclusive?<T>(tabId: number, job: () => Promise<T>): Promise<T>;
+  exclusive?<T>(
+    tabId: number,
+    job: () => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T>;
 }
 
 /** Per-source-tab collections. Only bounded transactions are serialized; extraction is asynchronous. */
 export class Collections {
   private queue: Promise<unknown> = Promise.resolve();
-  private jobs = new Set<number>();
+  private jobs = new Map<number, AbortController>();
   private downloads = new Set<number>();
   constructor(private deps: CollectionDependencies) {}
   busy(id: number) {
@@ -117,6 +122,7 @@ export class Collections {
       if ((saved.phase === "reading" || saved.busy) && !this.jobs.has(id)) {
         saved.phase = "paused";
         saved.busy = false;
+        saved.activity = undefined;
         saved.error =
           "Reading was interrupted. Resume to continue from the saved progress.";
         await this.write(saved);
@@ -144,6 +150,7 @@ export class Collections {
         /* An unusable cached result can be retried by the collection. */
       }
     }
+    const preferences = await this.deps.preferences?.();
     return this.write({
       tabId: id,
       generation: crypto.randomUUID(),
@@ -153,13 +160,17 @@ export class Collections {
       parts: [part],
       phase: part.status === "ready" ? "ready" : "idle",
       error: "",
-      options: { ...defaultCollectionOptions },
+      options: {
+        ...defaultCollectionOptions,
+        ...(validOptions(preferences) ? preferences : {}),
+      },
       download: "idle",
       downloadIds: [],
     });
   }
   async remove(id: number) {
     await this.transaction(async () => {
+      this.jobs.get(id)?.abort();
       await this.deps.remove(id);
       await this.deps.checkpoint(id);
     });
@@ -173,8 +184,19 @@ export class Collections {
           state.phase = "paused";
           state.error = "Pausing after the current reading step…";
           await this.write(state);
+          this.jobs.get(state.tabId)?.abort();
         }
         return { collection: state };
+      }
+      if (request.action === "options") {
+        if (this.downloads.has(state.tabId) || state.download === "saving")
+          throw new Error(
+            "Wait for the download to finish before changing export options.",
+          );
+        this.applyOptions(state, request);
+        state.download = "idle";
+        state.downloadIds = [];
+        return { collection: await this.write(state) };
       }
       if (
         this.jobs.has(state.tabId) ||
@@ -198,6 +220,7 @@ export class Collections {
         }));
         state.phase = "idle";
         state.busy = false;
+        state.activity = undefined;
         state.download = "idle";
         state.downloadIds = [];
         return { collection: await this.write(state) };
@@ -271,43 +294,17 @@ export class Collections {
           part.error = "";
           part.tracks = [];
         }
-      } else if (request.action === "options") {
-        const o = request.options;
-        if (
-          !o ||
-          !validOptions(o) ||
-          !["combined", "individual"].includes(o.mode) ||
-          !["continuous", "custom", "local"].includes(o.timeline) ||
-          typeof o.includeSources !== "boolean" ||
-          typeof o.allowMixedLanguages !== "boolean"
-        )
-          throw new Error("Choose valid export options.");
-        state.options = { ...o };
-        if (
-          o.timeline === "custom" &&
-          state.parts.some((p) => p.offset === undefined)
-        ) {
-          try {
-            const offsets = collectionOffsets(state.parts, "continuous");
-            state.parts.forEach((part, index) => {
-              part.offset ??= offsets[index];
-            });
-          } catch {
-            if (state.parts[0]) state.parts[0].offset ??= 0;
-          }
-        }
-        if (request.title !== undefined)
-          state.title =
-            request.title.trim().slice(0, 250) || "Combined transcript";
       }
       if (request.action === "start" || request.action === "retry") {
         if (!state.parts.length)
           throw new Error("Add at least one recording first.");
         state.phase = "reading";
         state.busy = true;
+        state.activity = "waiting";
         state.download = "idle";
         state.downloadIds = [];
-        this.jobs.add(state.tabId);
+        const controller = new AbortController();
+        this.jobs.set(state.tabId, controller);
         try {
           await this.write(state);
         } catch (error) {
@@ -317,11 +314,32 @@ export class Collections {
         void this.deps
           .working(() =>
             this.deps.exclusive
-              ? this.deps.exclusive(state.tabId, () => this.run(state))
+              ? this.deps.exclusive(
+                  state.tabId,
+                  () => this.run(state),
+                  controller.signal,
+                )
               : this.run(state),
           )
-          .catch(() => {})
-          .finally(() => this.jobs.delete(state.tabId));
+          .catch((error) =>
+            this.transaction(async () => {
+              if (this.jobs.get(state.tabId) !== controller) return;
+              const current = await this.current(state);
+              if (!current) return;
+              current.busy = false;
+              current.activity = undefined;
+              current.phase = "paused";
+              current.error = controller.signal.aborted
+                ? "Paused. Resume to continue from the saved progress."
+                : friendlyError(error);
+              await this.write(current);
+            }),
+          )
+          .finally(() => {
+            if (this.jobs.get(state.tabId) === controller)
+              this.jobs.delete(state.tabId);
+          })
+          .catch(() => {});
         return { collection: state };
       }
       if (request.action === "download") {
@@ -346,6 +364,34 @@ export class Collections {
       return { collection: state };
     });
   }
+  private applyOptions(state: RecordingCollection, request: CollectionRequest) {
+    const o = request.options;
+    if (
+      !o ||
+      !validOptions(o) ||
+      !["combined", "individual"].includes(o.mode) ||
+      !["continuous", "custom", "local"].includes(o.timeline) ||
+      typeof o.includeSources !== "boolean" ||
+      typeof o.allowMixedLanguages !== "boolean"
+    )
+      throw new Error("Choose valid export options.");
+    state.options = { ...o };
+    if (
+      o.timeline === "custom" &&
+      state.parts.some((p) => p.offset === undefined)
+    ) {
+      try {
+        const offsets = collectionOffsets(state.parts, "continuous");
+        state.parts.forEach((part, index) => {
+          part.offset ??= offsets[index];
+        });
+      } catch {
+        if (state.parts[0]) state.parts[0].offset ??= 0;
+      }
+    }
+    if (request.title !== undefined)
+      state.title = request.title.trim().slice(0, 250) || "Combined transcript";
+  }
   private async run(initial: RecordingCollection) {
     let expectedUrl = "";
     let restore = false;
@@ -362,6 +408,13 @@ export class Collections {
           );
         await new Promise((resolve) => setTimeout(resolve, 150));
       }
+      await this.transaction(async () => {
+        const state = await this.current(initial);
+        if (state?.phase === "reading") {
+          state.activity = "reading";
+          await this.write(state);
+        }
+      });
       const source = await this.deps.source(initial.tabId);
       returnUrl = sourceUrl(source.url, new URL(initial.sourceUrl).origin);
       expectedUrl = canonicalSource(returnUrl);
@@ -382,6 +435,8 @@ export class Collections {
           const reading = latest.parts.find((p) => p.id === part.id)!;
           reading.status = "reading";
           reading.error = "";
+          latest.activity =
+            expectedUrl === canonicalSource(part.url) ? "reading" : "opening";
           await this.write(latest);
           return true;
         });
@@ -392,6 +447,14 @@ export class Collections {
             await this.deps.navigate(state.tabId, part.url);
             restore = true;
           }
+          const mayRead = await this.transaction(async () => {
+            const latest = await this.current(initial);
+            if (!latest || latest.phase !== "reading") return false;
+            latest.activity = "reading";
+            await this.write(latest);
+            return true;
+          });
+          if (!mayRead) break;
           const checkpoint = await this.deps.readCheckpoint(state.tabId);
           const capture = await this.deps.capture(
             state.tabId,
@@ -476,6 +539,13 @@ export class Collections {
             canonicalSource(current.url) === expectedUrl &&
             canonicalSource(returnUrl) !== expectedUrl
           ) {
+            await this.transaction(async () => {
+              const state = await this.current(initial);
+              if (state) {
+                state.activity = "restoring";
+                await this.write(state);
+              }
+            });
             await this.deps.navigate(initial.tabId, returnUrl);
             if (player) await this.deps.restorePlayer?.(initial.tabId, player);
           }
@@ -487,6 +557,7 @@ export class Collections {
         const state = await this.current(initial);
         if (!state) return;
         state.busy = false;
+        state.activity = undefined;
         for (const part of state.parts)
           if (part.status === "reading") part.status = "pending";
         if (state.phase === "reading") {

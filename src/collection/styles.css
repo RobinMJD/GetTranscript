@@ -879,3 +879,8 @@ textarea::placeholder {
 .offset-field > .invalid-time {
   color: #a64134;
 }
+
+.options-hint {
+  margin-top: 9px;
+  color: #426691;
+}
