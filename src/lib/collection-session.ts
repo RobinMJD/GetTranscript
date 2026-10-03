@@ -27,6 +27,7 @@ export type CollectionRequest = {
     | "reset"
     | "download"
     | "retry"
+    | "open"
     | "discover";
   tabId: number;
   urls?: string[];
@@ -60,6 +61,7 @@ export interface CollectionDependencies {
   rememberPlayer?(id: number): Promise<unknown>;
   restorePlayer?(id: number, state: unknown): Promise<void>;
   navigate(id: number, url: string): Promise<void>;
+  openSource(id: number, url: string): Promise<void>;
   capture(
     id: number,
     progress: (capture: PageCapture) => Promise<void>,
@@ -206,6 +208,15 @@ export class Collections {
         throw new Error(
           "Wait for the current operation to finish before changing the collection.",
         );
+      if (request.action === "open") {
+        const part = state.parts.find((p) => p.id === request.partId);
+        if (!part) throw new Error("Choose a recording in this collection.");
+        const url = sourceUrl(part.url, new URL(state.sourceUrl).origin);
+        await this.deps.openSource(state.tabId, url);
+        // This is a manual preparation step, not another timed read. Keep the
+        // failed part and every completed result until the user chooses Retry.
+        return { collection: state };
+      }
       state.error = "";
       if (request.action === "reset") {
         await this.deps.checkpoint(state.tabId);

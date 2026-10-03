@@ -189,54 +189,75 @@ function validateCapture(value: unknown): asserts value is PageCapture {
   }
 }
 
+/** A mounted track can still be empty while the player loads its captions. */
+function hasUsableCaptions(capture: PageCapture): boolean {
+  return capture.tracks.some((track) => {
+    try {
+      return track.vtt
+        ? parseVtt(track.vtt).length > 0
+        : validateCues(
+            (track.cues || []).map((cue) => ({
+              ...cue,
+              text:
+                track.textFormat === "plain" ? cue.text : plainText(cue.text),
+            })),
+          ).length > 0;
+    } catch {
+      return false;
+    }
+  });
+}
+
 export async function captureTab(
   tabId: number,
   onProgress?: (capture: PageCapture) => Promise<void>,
   shouldContinue?: () => Promise<boolean>,
   initialCapture?: PageCapture,
 ): Promise<PageCapture> {
+  const changedRecording = () =>
+    new Error(
+      "The recording changed while reading. Refresh to read the current video.",
+    );
   const tab = await chrome.tabs.get(tabId);
   if (!tab?.id || isRestrictedPage(tab.url || "")) throw new PageAccessError();
   const source = sourceIdentity(tab.url!);
+  const checkSource = async () => {
+    const current = await chrome.tabs.get(tabId);
+    if (!current?.id || !current.url) throw new PageAccessError();
+    if (sourceIdentity(current.url) !== source) throw changedRecording();
+  };
+  const checkContinue = async () => {
+    if (shouldContinue && !(await shouldContinue()))
+      throw new Error("Reading was canceled.");
+  };
   if (initialCapture?.sourceUrl && initialCapture.sourceUrl !== source)
-    throw new Error(
-      "The recording changed while reading. Refresh to read the current video.",
-    );
+    throw changedRecording();
   if (initialCapture) validateCapture(initialCapture);
   const page = new URL(source);
-  if (
-    !initialCapture &&
+  const isStream =
     /(^|\.)sharepoint\.(com|us|de|cn)$/.test(page.hostname) &&
-    /\/stream\.aspx$/i.test(page.pathname)
-  ) {
-    // Structured entries include the player's own speaker names and do not
-    // depend on rendering thousands of virtualized rows in a visible tab.
-    const [injection] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      world: "MAIN",
-      func: collectStreamPage,
-      args: [],
-    });
-    const direct = injection?.result;
-    if (direct) {
-      validateCapture(direct);
-      if (
-        direct.sourceUrl !== source ||
-        sourceIdentity((await chrome.tabs.get(tabId)).url || "") !== source
-      )
-        throw new Error(
-          "The recording changed while reading. Refresh to read the current video.",
-        );
-      if (onProgress) await onProgress(direct);
-      if (shouldContinue && !(await shouldContinue()))
-        throw new Error("Reading was canceled.");
-      return direct;
-    }
-  }
+    /\/stream\.aspx$/i.test(page.pathname);
+  const waitForStream =
+    isStream &&
+    page.protocol === "https:" &&
+    !!page.searchParams.get("id")?.trim();
+  // ReadyState complete only describes the shell. Stream may mount the player,
+  // its Transcript control and caption requests considerably later. Retry from
+  // the worker so a hidden page's rendering/timers do not drive readiness.
+  const startupDeadline = Date.now() + 45_000;
+  const startupTimeout = () =>
+    new Error(
+      "Captions are not ready after waiting for this recording. Open the video tab, click Transcript, then retry this part.",
+    );
+  // An earlier attempt may have saved the player before its tracks loaded.
+  // Never resume that empty snapshot or let it suppress a fresh direct read.
+  let capture =
+    initialCapture && hasUsableCaptions(initialCapture)
+      ? initialCapture
+      : undefined;
   // Paused time does not consume a resumed operation's active collection budget.
   // Every chunk in this invocation still shares this single bounded deadline.
-  const deadline = Date.now() + 10 * 60_000;
-  let capture = initialCapture;
+  let deadline = Date.now() + 10 * 60_000;
   const rows = new Map<number, SpeakerRow>(
     capture?.rows.map((row) => [row.index, row]) || [],
   );
@@ -247,8 +268,40 @@ export async function captureTab(
   const incompleteWarning =
     "Some speaker labels could not be loaded. Unmatched captions remain unnamed.";
   while (!capture || capture.rowCursor) {
-    if (shouldContinue && !(await shouldContinue()))
-      throw new Error("Reading was canceled.");
+    await checkContinue();
+    await checkSource();
+    if (!capture && isStream) {
+      if (waitForStream && startupDeadline - Date.now() < 1000)
+        throw startupTimeout();
+      // Structured entries include the player's own speaker names and do not
+      // depend on rendering thousands of virtualized rows in a visible tab.
+      const [injection] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        world: "MAIN",
+        func: collectStreamPage,
+        args: [
+          {
+            timeoutMs: waitForStream
+              ? Math.min(18_000, startupDeadline - Date.now())
+              : 18_000,
+          },
+        ],
+      });
+      await checkSource();
+      const direct = injection?.result;
+      if (direct) {
+        validateCapture(direct);
+        if (direct.sourceUrl !== source) throw changedRecording();
+        if (hasUsableCaptions(direct)) {
+          if (onProgress) await onProgress(direct);
+          await checkContinue();
+          return direct;
+        }
+      }
+      await checkContinue();
+      if (waitForStream && startupDeadline - Date.now() < 1000)
+        throw startupTimeout();
+    }
     if (Date.now() >= deadline || rows.size >= 50000) {
       if (!capture)
         throw new Error("The page did not return a usable transcript.");
@@ -273,16 +326,29 @@ export async function captureTab(
         {
           speakers: true,
           prepare: !capture,
+          ...(!capture && waitForStream
+            ? { timeoutMs: Math.min(18_000, startupDeadline - Date.now()) }
+            : {}),
           ...(capture?.rowCursor ? { resume: capture.rowCursor } : {}),
         },
       ],
     });
+    await checkSource();
     const result = injection?.result;
-    if (result?.sourceUrl !== source)
-      throw new Error(
-        "The recording changed while reading. Refresh to read the current video.",
-      );
+    if (result?.sourceUrl !== source) throw changedRecording();
     validateCapture(result);
+    if (!capture && !hasUsableCaptions(result)) {
+      // Empty initialization results are not durable checkpoints: the next
+      // attempt must discover both native tracks and structured metadata anew.
+      await checkContinue();
+      if (!waitForStream) return result;
+      if (Date.now() >= startupDeadline) throw startupTimeout();
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, Math.min(1000, startupDeadline - Date.now())),
+      );
+      continue;
+    }
+    if (!capture) deadline = Date.now() + 10 * 60_000;
     let rowLimitReached = false;
     for (const row of result.rows) {
       if (

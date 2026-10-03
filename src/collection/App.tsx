@@ -3,6 +3,7 @@ import {
   collectionKey,
   canonicalSource,
   defaultCollectionOptions,
+  partTimingWarning,
   type CollectionOptions,
   type RecordingCollection,
   type RecordingPart,
@@ -31,6 +32,7 @@ type Action =
   | "reset"
   | "download"
   | "retry"
+  | "open"
   | "discover";
 type Request = {
   target: "collection";
@@ -543,6 +545,13 @@ export function App() {
                 <ol className="part-list">
                   {parts.map((part, i) => {
                     const track = selected(part);
+                    const timingWarning = partTimingWarning(part);
+                    const warnings = [
+                      ...new Set([
+                        ...(track?.transcript.warnings || []),
+                        ...(timingWarning ? [timingWarning] : []),
+                      ]),
+                    ];
                     return (
                       <li className={`part ${part.status}`} key={part.id}>
                         <div className="part-top">
@@ -630,15 +639,26 @@ export function App() {
                             )}
                           </span>
                           {part.status === "error" && (
-                            <button
-                              className="text-button"
-                              disabled={locked}
-                              onClick={() =>
-                                void request("retry", { partId: part.id })
-                              }
-                            >
-                              Retry this part
-                            </button>
+                            <>
+                              <button
+                                className="text-button"
+                                disabled={locked}
+                                onClick={() =>
+                                  void request("retry", { partId: part.id })
+                                }
+                              >
+                                Retry this part
+                              </button>
+                              <button
+                                className="text-button"
+                                disabled={locked}
+                                onClick={() =>
+                                  void request("open", { partId: part.id })
+                                }
+                              >
+                                Open recording
+                              </button>
+                            </>
                           )}
                           {part.tracks.length > 1 && (
                             <label className="track-choice">
@@ -669,7 +689,13 @@ export function App() {
                             {part.error}
                           </p>
                         )}
-                        {track?.transcript.warnings.map((warning, wi) => (
+                        {part.status === "error" && (
+                          <p className="part-recovery">
+                            If the player needs help, open this recording,
+                            select Transcript, then return here and retry.
+                          </p>
+                        )}
+                        {warnings.map((warning, wi) => (
                           <p className="part-warning" key={wi}>
                             {warning}
                           </p>

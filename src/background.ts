@@ -170,6 +170,20 @@ const collections = new Collections({
       "This recording took too long to load. Retry it when the page is ready.",
     );
   },
+  openSource: (id, url) =>
+    whileWorking(() =>
+      tabWork.run(id, async () => {
+        const source = await chrome.tabs.get(id);
+        const same =
+          source.url && canonicalSource(source.url) === canonicalSource(url);
+        const tab = await chrome.tabs.update(id, {
+          active: true,
+          ...(same ? {} : { url }),
+        });
+        if (tab?.windowId !== undefined)
+          await chrome.windows.update(tab.windowId, { focused: true });
+      }),
+    ),
   capture: (id, progress, continuing, initial) =>
     captureTab(id, progress, continuing, initial),
   discover: async (id) => {

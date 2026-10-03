@@ -100,7 +100,7 @@ it.each([
     const s = setup(url);
     const reading = collectStreamPage();
     await vi.waitFor(() => expect(s.button.click).toHaveBeenCalledTimes(1));
-    await vi.advanceTimersByTimeAsync(4000);
+    await vi.advanceTimersByTimeAsync(6000);
     expect(await reading).toBeUndefined();
     expect(s.fetch).toHaveBeenCalledTimes(2);
     expect(s.window.fetch).toBe(s.fetch);

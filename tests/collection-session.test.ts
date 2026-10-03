@@ -52,6 +52,9 @@ function setup() {
     navigate: vi.fn(async (_id, next) => {
       url = next;
     }),
+    openSource: vi.fn(async (_id, next) => {
+      url = next;
+    }),
     capture: vi.fn(async (_id, progress) => {
       const c = capture(url);
       await progress(c);
@@ -328,10 +331,22 @@ describe("recording collection jobs", () => {
     expect(s.states.get(7)?.parts[1].error).toBe("No captions");
     await expect(s.send("download")).rejects.toThrow();
     expect(s.deps.download).not.toHaveBeenCalled();
+    const failed = structuredClone(s.states.get(7)!);
+    const reads = vi.mocked(s.deps.capture).mock.calls.length;
+    await s.send("open", { partId: failed.parts[1].id });
+    expect(s.deps.openSource).toHaveBeenCalledWith(7, second);
+    expect(s.getUrl()).toBe(second);
+    expect(s.states.get(7)).toEqual(failed);
+    expect(s.deps.capture).toHaveBeenCalledTimes(reads);
+    await s.send("get");
+    expect(s.states.get(7)?.parts[0]).toEqual(failed.parts[0]);
+    vi.mocked(s.deps.navigate).mockClear();
     s.deps.capture = vi.fn(async () => capture(s.getUrl()));
     await s.send("retry", { partId: s.states.get(7)!.parts[1].id });
     await complete(s);
     expect(s.deps.capture).toHaveBeenCalledTimes(1);
+    expect(s.deps.navigate).not.toHaveBeenCalled();
+    expect(s.states.get(7)?.parts[0]).toEqual(failed.parts[0]);
   });
   it("continues after its view closes and reconciles saved downloads on reopen", async () => {
     const s = setup();

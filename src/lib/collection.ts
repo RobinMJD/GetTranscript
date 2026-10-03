@@ -57,6 +57,9 @@ export const defaultCollectionOptions: CollectionOptions = {
 export const MAX_COLLECTION_PARTS = 20;
 export const MAX_COLLECTION_CUES = 50_000;
 export const MAX_COLLECTION_TEXT = 5_000_000;
+// Some players report a media boundary a few seconds before their final cues.
+// Keep this compatibility tolerance bounded; never derive offsets from cues.
+const MAX_CAPTION_OVERHANG_SECONDS = 5;
 export const collectionKey = (tabId: number) => `collection:${tabId}`;
 
 /** Keep playable URLs, but discard tracking parameters and reject unsafe inputs. */
@@ -185,6 +188,22 @@ const languageKey = (value: string) =>
 const shiftedTime = (time: number, offset: number) =>
   Math.round((time + offset) * 1000) / 1000;
 
+function captionOverhang(part: RecordingPart): number {
+  if (!Number.isFinite(part.duration) || part.duration! <= 0) return 0;
+  const track = part.tracks.find((track) => track.key === part.selectedTrack);
+  return (track?.transcript.cues || []).reduce(
+    (overhang, cue) => Math.max(overhang, cue.end - part.duration!),
+    0,
+  );
+}
+
+/** Derived from the selected track so cached results also show timing drift. */
+export function partTimingWarning(part: RecordingPart): string | undefined {
+  const overhang = captionOverhang(part);
+  if (overhang <= 0.05) return undefined;
+  return `Caption timestamps extend ${overhang.toFixed(3)} seconds beyond this video's reported duration. Original caption timings and video duration are preserved.`;
+}
+
 /** Offsets come only from media duration or explicit user input, never caption ends. */
 export function collectionOffsets(
   parts: RecordingPart[],
@@ -256,16 +275,16 @@ export function exportCollection(
     for (const cue of cues) {
       totalCues++;
       totalText += cue.text.length;
-      if (
-        needsTimeline &&
-        part.duration !== undefined &&
-        cue.end > part.duration + 0.05
-      )
-        throw new Error(
-          `Part ${index + 1} has captions outside its video duration. Refresh this recording before combining it.`,
-        );
     }
-    return { ...track, transcript: { ...track.transcript, cues } };
+    if (needsTimeline && captionOverhang(part) > MAX_CAPTION_OVERHANG_SECONDS)
+      throw new Error(
+        `Part ${index + 1} has captions more than ${MAX_CAPTION_OVERHANG_SECONDS} seconds outside its video duration. Refresh this recording or export separate files with original timestamps.`,
+      );
+    const timingWarning = partTimingWarning(part);
+    const warnings = timingWarning
+      ? [...new Set([...track.transcript.warnings, timingWarning])]
+      : track.transcript.warnings;
+    return { ...track, transcript: { ...track.transcript, cues, warnings } };
   });
   if (totalCues > MAX_COLLECTION_CUES || totalText > MAX_COLLECTION_TEXT)
     throw new Error(
@@ -303,6 +322,10 @@ export function exportCollection(
           ? `\n\n[Open recording](<${sourceUrl(parts[index].url).replace(/[<>]/g, (c) => (c === "<" ? "%3C" : "%3E"))}>)`
           : `\n\nSource: ${sourceUrl(parts[index].url)}`
         : "";
+      const timingWarning = partTimingWarning(parts[index]);
+      const note = timingWarning
+        ? `\n\n${markdown ? "> " : "Note: "}${escape(timingWarning)}`
+        : "";
       const cues = track.transcript.cues
         .map((cue) => {
           const clocks =
@@ -316,7 +339,7 @@ export function exportCollection(
             : `[${clocks}${speaker}]\n${cue.text}`;
         })
         .join("\n\n");
-      return `${heading}${source}\n\n${cues}`;
+      return `${heading}${source}${note}\n\n${cues}`;
     });
     result = {
       mime: markdown ? "text/markdown" : "text/plain",
@@ -358,14 +381,18 @@ export function exportCollection(
         ) + "\n",
     };
   } else {
-    const cues = tracks.flatMap((track, index) =>
-      track.transcript.cues.map((cue, cueIndex) => ({
-        ...cue,
-        id: `${parts[index].id}:${cueIndex + 1}:${cue.id}`,
-        start: shiftedTime(cue.start, offsets[index]),
-        end: shiftedTime(cue.end, offsets[index]),
-      })),
-    );
+    const cues = tracks
+      .flatMap((track, index) =>
+        track.transcript.cues.map((cue, cueIndex) => ({
+          ...cue,
+          id: `${parts[index].id}:${cueIndex + 1}:${cue.id}`,
+          start: shiftedTime(cue.start, offsets[index]),
+          end: shiftedTime(cue.end, offsets[index]),
+        })),
+      )
+      // Caption overhang may interleave neighboring parts. WebVTT requires
+      // nondecreasing starts; stable sorting retains source order for ties.
+      .sort((a, b) => a.start - b.start);
     result = exportTranscript(
       { title, language, provider: "Recording collection", cues, warnings: [] },
       options,

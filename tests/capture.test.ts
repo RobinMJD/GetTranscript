@@ -32,7 +32,10 @@ const capture: PageCapture = {
   warnings: [],
   rowCursor: { sourceUrl: source, nextScrollTop: 400, expectedRows: 3 },
 };
-function setup(results: PageCapture[], direct?: PageCapture) {
+function setup(
+  results: PageCapture[],
+  direct?: PageCapture | (() => PageCapture | undefined),
+) {
   const executeScript = vi.fn();
   results.forEach((result) =>
     executeScript.mockResolvedValueOnce([{ result }]),
@@ -44,7 +47,9 @@ function setup(results: PageCapture[], direct?: PageCapture) {
     scripting: {
       executeScript: (args: { func: unknown }) =>
         args.func === collectStreamPage
-          ? Promise.resolve([{ result: direct }])
+          ? Promise.resolve([
+              { result: typeof direct === "function" ? direct() : direct },
+            ])
           : executeScript(args),
     },
   });
@@ -53,6 +58,7 @@ function setup(results: PageCapture[], direct?: PageCapture) {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 describe("chunked recording collection", () => {
   it("uses structured Stream entries without starting a DOM scan", async () => {
@@ -83,22 +89,11 @@ describe("chunked recording collection", () => {
       text,
     );
   });
-  it("validates structured capture and preserves actionable fallback errors", async () => {
+  it("validates structured capture before checkpointing", async () => {
     setup([], { ...capture, duration: Infinity });
-    await expect(captureTab(1)).rejects.toThrow("caption metadata");
-    setup([
-      {
-        ...capture,
-        tracks: [],
-        rowCursor: undefined,
-        warnings: [
-          "This player has not exposed captions in the background. Open the video tab and refresh.",
-        ],
-      },
-    ]);
-    await expect(captureTab(1)).rejects.toThrow(
-      "Open the video tab and refresh.",
-    );
+    const progress = vi.fn(async () => {});
+    await expect(captureTab(1, progress)).rejects.toThrow("caption metadata");
+    expect(progress).not.toHaveBeenCalled();
   });
   it("merges overlap, keeps tracks once and reports resumable progress", async () => {
     const execute = setup([
@@ -152,11 +147,13 @@ describe("chunked recording collection", () => {
     expect(progress).toHaveBeenCalledWith(capture);
   });
   it("checkpoints the current chunk when Pause arrives during its injection", async () => {
-    const execute = setup([capture]);
-    const allowed = vi
-      .fn()
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false);
+    const execute = setup([]);
+    let running = true;
+    execute.mockImplementationOnce(async () => {
+      running = false;
+      return [{ result: capture }];
+    });
+    const allowed = vi.fn(async () => running);
     const progress = vi.fn(async () => {});
     await expect(captureTab(1, progress, allowed)).rejects.toThrow("canceled");
     expect(execute).toHaveBeenCalledTimes(1);
@@ -324,5 +321,193 @@ describe("chunked recording collection", () => {
     expect(result.tracks[0].cues?.[25].text).toHaveLength(100000);
     expect(result.warnings.join(" ")).toContain("omitted in full");
     expect(native.map((track) => track.mode)).toEqual(["disabled", "disabled"]);
+  });
+});
+
+describe("Stream startup readiness", () => {
+  const empty: PageCapture = {
+    ...capture,
+    tracks: [],
+    rows: [],
+    expectedRows: 0,
+    completeRows: false,
+    rowCursor: undefined,
+  };
+  const ready: PageCapture = {
+    ...capture,
+    rows: [],
+    expectedRows: 0,
+    completeRows: true,
+    rowCursor: undefined,
+  };
+  const unavailable = () => {
+    const execute = setup([empty]);
+    execute.mockResolvedValue([{ result: empty }]);
+    return execute;
+  };
+
+  it("retries late Stream metadata and never checkpoints empty initialization", async () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    const direct = vi.fn(() =>
+      Date.now() - start >= 12_000 ? ready : undefined,
+    );
+    const execute = setup([empty], direct);
+    execute.mockResolvedValue([{ result: empty }]);
+    const progress = vi.fn(async () => {});
+    const reading = captureTab(1, progress);
+    await vi.advanceTimersByTimeAsync(11_999);
+    expect(progress).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await reading).toEqual(ready);
+    expect(progress).toHaveBeenCalledTimes(1);
+    expect(progress).toHaveBeenCalledWith(ready);
+    expect(direct).toHaveBeenCalledTimes(13);
+    expect(execute).toHaveBeenCalledTimes(12);
+  });
+
+  it("waits for cues when a native track is mounted but still empty", async () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    const execute = setup([]);
+    execute.mockImplementation(async () => [
+      {
+        result:
+          Date.now() - start >= 8_000
+            ? ready
+            : {
+                ...empty,
+                tracks: [{ ...capture.tracks[0], cues: [] }],
+              },
+      },
+    ]);
+    const progress = vi.fn(async () => {});
+    const reading = captureTab(1, progress);
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(await reading).toMatchObject({ tracks: capture.tracks });
+    expect(progress).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls.every(([args]) => args.args[0].prepare)).toBe(
+      true,
+    );
+  });
+
+  it("ignores an empty checkpoint and tries the structured reader again", async () => {
+    const execute = setup([], ready);
+    const checkpoint = {
+      ...empty,
+      tracks: [{ ...capture.tracks[0], cues: [] }],
+      rowCursor: capture.rowCursor,
+    };
+    const progress = vi.fn(async () => {});
+    expect(await captureTab(1, progress, undefined, checkpoint)).toEqual(ready);
+    expect(execute).not.toHaveBeenCalled();
+    expect(progress).toHaveBeenCalledWith(ready);
+  });
+
+  it("bounds missing captions to 45 seconds without caching an empty result", async () => {
+    vi.useFakeTimers();
+    const execute = unavailable();
+    const progress = vi.fn(async () => {});
+    const result = expect(captureTab(1, progress)).rejects.toThrow(
+      "click Transcript, then retry this part",
+    );
+    await vi.advanceTimersByTimeAsync(44_000);
+    expect(progress).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(45);
+    await vi.advanceTimersByTimeAsync(1000);
+    await result;
+    expect(progress).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(45);
+    expect(execute.mock.calls.at(-1)?.[0].args[0].timeoutMs).toBe(1000);
+  });
+
+  it("keeps generic unsupported pages fast", async () => {
+    const genericSource = "https://video.example/not-a-video";
+    const execute = setup([{ ...empty, sourceUrl: genericSource }]);
+    vi.mocked(chrome.tabs.get).mockImplementation(
+      async () =>
+        ({
+          id: 1,
+          url: genericSource,
+        }) as chrome.tabs.Tab,
+    );
+    const progress = vi.fn(async () => {});
+    expect(await captureTab(1, progress)).toMatchObject({ tracks: [] });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(progress).not.toHaveBeenCalled();
+  });
+
+  it("keeps non-recording Stream pages without an item id fast", async () => {
+    const shellSource =
+      "https://fixture.sharepoint.com/_layouts/15/stream.aspx";
+    const direct = vi.fn(() => undefined);
+    const execute = setup([{ ...empty, sourceUrl: shellSource }], direct);
+    vi.mocked(chrome.tabs.get).mockImplementation(
+      async () =>
+        ({
+          id: 1,
+          url: shellSource,
+        }) as chrome.tabs.Tab,
+    );
+    const progress = vi.fn(async () => {});
+    expect(await captureTab(1, progress)).toMatchObject({ tracks: [] });
+    expect(direct).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(progress).not.toHaveBeenCalled();
+  });
+
+  it("stops between startup attempts when paused", async () => {
+    vi.useFakeTimers();
+    const execute = unavailable();
+    let running = true;
+    const progress = vi.fn(async () => {});
+    const result = expect(
+      captureTab(1, progress, async () => running),
+    ).rejects.toThrow("canceled");
+    await vi.advanceTimersByTimeAsync(500);
+    running = false;
+    await vi.advanceTimersByTimeAsync(500);
+    await result;
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(progress).not.toHaveBeenCalled();
+  });
+
+  it("rejects a changed recording between startup attempts", async () => {
+    vi.useFakeTimers();
+    const execute = unavailable();
+    const result = expect(captureTab(1)).rejects.toThrow("recording changed");
+    await vi.advanceTimersByTimeAsync(500);
+    vi.mocked(chrome.tabs.get).mockImplementation(
+      async () =>
+        ({
+          id: 1,
+          url: source.replace("recording", "other"),
+        }) as chrome.tabs.Tab,
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    await result;
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a source change during a direct read even when no metadata was returned", async () => {
+    const execute = setup([], () => {
+      vi.mocked(chrome.tabs.get).mockImplementation(
+        async () =>
+          ({
+            id: 1,
+            url: source.replace("recording", "other"),
+          }) as chrome.tabs.Tab,
+      );
+      return undefined;
+    });
+    await expect(captureTab(1)).rejects.toThrow("recording changed");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("does not retry page-access failures", async () => {
+    const execute = setup([]);
+    execute.mockRejectedValue(new Error("Cannot access contents of the page"));
+    await expect(captureTab(1)).rejects.toThrow("Cannot access contents");
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 });

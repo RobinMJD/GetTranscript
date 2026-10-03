@@ -17,6 +17,9 @@ function setup(
     notes?: boolean;
     expanded?: boolean;
     controls?: boolean;
+    disabled?: boolean;
+    open?: boolean;
+    authorizationDelay?: number;
   } = {},
 ) {
   const observers = new Set<() => void>();
@@ -64,9 +67,15 @@ function setup(
       : {}),
     fetch: originalFetch,
   };
-  let open = false;
+  let open = !!options.open;
   let notesOpen = !!options.notes;
   let controlMounted = options.control !== false;
+  let disabled = !!options.disabled;
+  const emitAuthorization = () =>
+    void window.fetch(
+      `${origin}/_api_cached/v2.1/drives/d1/items/${options.wrongItem ? "other" : "i1"}/cdnmedia/transcripts`,
+      { headers: { "x-authorization": token } },
+    );
   const panel = {
     hidden: false,
     getAttribute: () => null,
@@ -100,18 +109,18 @@ function setup(
         return "transcript-pane";
       if (name === "data-automation-id") return "show_transcript";
       if (name === "aria-expanded" && options.expanded) return String(open);
+      if (name === "aria-disabled") return String(disabled);
       return null;
     },
-    hasAttribute: () => false,
+    hasAttribute: (name: string) => name === "disabled" && disabled,
     closest: () => ({ querySelectorAll: () => [button, notes] }),
     click: vi.fn(() => {
       open = !open;
       if (open) {
         notesOpen = false;
-        void window.fetch(
-          `${origin}/_api_cached/v2.1/drives/d1/items/${options.wrongItem ? "other" : "i1"}/cdnmedia/transcripts`,
-          { headers: { "x-authorization": token } },
-        );
+        if (options.authorizationDelay)
+          setTimeout(emitAuthorization, options.authorizationDelay);
+        else emitAuthorization();
       }
     }),
   };
@@ -147,6 +156,10 @@ function setup(
     observers,
     isOpen: () => open,
     notesOpen: () => notesOpen,
+    emitAuthorization,
+    enable: () => {
+      disabled = false;
+    },
     setControl: () => {
       controlMounted = true;
     },
@@ -191,7 +204,7 @@ it("bounds the wait on a complete page lacking Stream metadata or a loading sign
   vi.useFakeTimers();
   const s = setup({ metadata: false });
   const reading = collectStreamPage();
-  await vi.advanceTimersByTimeAsync(2000);
+  await vi.advanceTimersByTimeAsync(6000);
   expect(await reading).toBeUndefined();
   expect(s.originalFetch).not.toHaveBeenCalled();
   expect(s.observers.size).toBe(0);
@@ -209,11 +222,11 @@ it("accepts metadata mounted after document completion without a loading indicat
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("bounds metadata readiness to two seconds and releases its observer and timers", async () => {
+it("bounds metadata readiness to six seconds and releases its observer and timers", async () => {
   vi.useFakeTimers();
   const s = setup({ metadata: false, loading: true });
   const reading = collectStreamPage();
-  await vi.advanceTimersByTimeAsync(2000);
+  await vi.advanceTimersByTimeAsync(6000);
   expect(await reading).toBeUndefined();
   expect(s.originalFetch).not.toHaveBeenCalled();
   expect(s.observers.size).toBe(0);
@@ -273,11 +286,123 @@ it("restores plain controls and fetch when no matching authorization arrives", a
   vi.useFakeTimers();
   const s = setup({ authorization: true, wrongItem: true, notes: true });
   const reading = collectStreamPage();
-  await vi.advanceTimersByTimeAsync(4000);
+  await vi.advanceTimersByTimeAsync(6000);
   expect(await reading).toBeUndefined();
   expect(s.button.click).toHaveBeenCalledTimes(2);
   expect(s.isOpen()).toBe(false);
   expect(s.notesOpen()).toBe(true);
   expect(s.window.fetch).toBe(s.originalFetch);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("waits for metadata mounted several seconds after navigation", async () => {
+  vi.useFakeTimers();
+  const s = setup({ metadata: false });
+  const reading = collectStreamPage();
+  await vi.advanceTimersByTimeAsync(4500);
+  expect(s.originalFetch).not.toHaveBeenCalled();
+  s.window.g_fileInfo = { ".spItemUrl": item };
+  s.mutate();
+  expect((await reading)?.tracks).toHaveLength(1);
+  expect(s.observers.size).toBe(0);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("automatically activates a transcript control that mounts after two seconds", async () => {
+  vi.useFakeTimers();
+  const s = setup({ authorization: true, control: false });
+  const reading = collectStreamPage();
+  await vi.advanceTimersByTimeAsync(4000);
+  expect(s.button.click).not.toHaveBeenCalled();
+  s.setControl();
+  s.mutate();
+  expect((await reading)?.tracks).toHaveLength(1);
+  expect(s.button.click).toHaveBeenCalledTimes(2);
+  expect(s.isOpen()).toBe(false);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("waits until the transcript control is enabled before activating it", async () => {
+  vi.useFakeTimers();
+  const s = setup({ authorization: true, disabled: true });
+  const reading = collectStreamPage();
+  await vi.advanceTimersByTimeAsync(3500);
+  expect(s.button.click).not.toHaveBeenCalled();
+  s.enable();
+  s.mutate();
+  expect((await reading)?.tracks).toHaveLength(1);
+  expect(s.button.click).toHaveBeenCalledTimes(2);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("keeps the panel open while its caption request starts slowly", async () => {
+  vi.useFakeTimers();
+  const s = setup({ authorization: true, authorizationDelay: 5000 });
+  const reading = collectStreamPage();
+  await vi.advanceTimersByTimeAsync(4500);
+  expect(s.button.click).toHaveBeenCalledTimes(1);
+  expect(s.isOpen()).toBe(true);
+  await vi.advanceTimersByTimeAsync(500);
+  expect((await reading)?.tracks).toHaveLength(1);
+  expect(s.button.click).toHaveBeenCalledTimes(2);
+  expect(s.window.fetch).toBe(s.originalFetch);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("does not toggle an already-open panel while waiting for its captions", async () => {
+  vi.useFakeTimers();
+  const s = setup({ authorization: true, open: true });
+  const reading = collectStreamPage();
+  await vi.advanceTimersByTimeAsync(1000);
+  s.emitAuthorization();
+  expect((await reading)?.tracks).toHaveLength(1);
+  expect(s.button.click).not.toHaveBeenCalled();
+  expect(s.isOpen()).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("never restores a different recording's panel after navigation", async () => {
+  vi.useFakeTimers();
+  const s = setup({
+    authorization: true,
+    authorizationDelay: 3000,
+    notes: true,
+  });
+  const reading = collectStreamPage();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(s.button.click).toHaveBeenCalledTimes(1);
+  vi.stubGlobal(
+    "location",
+    new URL(source.replace("Meeting.mp4", "Other.mp4")),
+  );
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(await reading).toBeUndefined();
+  expect(s.button.click).toHaveBeenCalledTimes(1);
+  expect(s.notes.click).not.toHaveBeenCalled();
+  expect(s.originalFetch).toHaveBeenCalledTimes(2);
+  expect(s.window.fetch).toBe(s.originalFetch);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("honors a short worker startup budget while waiting for metadata", async () => {
+  vi.useFakeTimers();
+  const s = setup({ metadata: false });
+  const reading = collectStreamPage({ timeoutMs: 1500 });
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(await reading).toBeUndefined();
+  expect(s.originalFetch).not.toHaveBeenCalled();
+  expect(s.observers.size).toBe(0);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("honors the worker startup budget while waiting for a disabled control", async () => {
+  vi.useFakeTimers();
+  const s = setup({ authorization: true, disabled: true });
+  const reading = collectStreamPage({ timeoutMs: 1500 });
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(await reading).toBeUndefined();
+  expect(s.button.click).not.toHaveBeenCalled();
+  expect(s.window.fetch).toBe(s.originalFetch);
+  expect(s.observers.size).toBe(0);
   expect(vi.getTimerCount()).toBe(0);
 });

@@ -1,9 +1,15 @@
 import type { Cue, PageCapture, RawTrack } from "../lib/types";
 
 /** Self-contained: Chrome serializes this function into the page's MAIN world. */
-export async function collectStreamPage(): Promise<PageCapture | undefined> {
+export async function collectStreamPage(
+  options: { timeoutMs?: number } = {},
+): Promise<PageCapture | undefined> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 18_000);
+  const timeoutMs = Number.isFinite(options.timeoutMs)
+    ? Math.max(1000, Math.min(18000, options.timeoutMs!))
+    : 18000;
+  const deadline = Date.now() + timeoutMs;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let cleanup = () => {};
   try {
     const record = (value: unknown): value is Record<string, unknown> =>
@@ -37,6 +43,7 @@ export async function collectStreamPage(): Promise<PageCapture | undefined> {
     const waitUntil = async (ready: () => boolean, milliseconds: number) => {
       if (controller.signal.aborted || !sameSource()) return false;
       if (ready()) return true;
+      milliseconds = Math.max(1, Math.min(milliseconds, deadline - Date.now()));
       return new Promise<boolean>((resolve) => {
         const deadline = Date.now() + milliseconds;
         let settled = false;
@@ -87,7 +94,7 @@ export async function collectStreamPage(): Promise<PageCapture | undefined> {
       await waitUntil(() => {
         fileInfo = currentFileInfo();
         return record(fileInfo) && typeof fileInfo[".spItemUrl"] === "string";
-      }, 2000);
+      }, 6000);
     }
     if (controller.signal.aborted || !sameSource()) return undefined;
     if (!record(fileInfo) || typeof fileInfo[".spItemUrl"] !== "string")
@@ -236,7 +243,7 @@ export async function collectStreamPage(): Promise<PageCapture | undefined> {
         await waitUntil(() => {
           button = findTranscriptButton();
           return !!authorization || !!button;
-        }, 2000);
+        }, 6000);
       if (
         authorization ||
         !button ||
@@ -252,7 +259,10 @@ export async function collectStreamPage(): Promise<PageCapture | undefined> {
           controller.signal.removeEventListener("abort", finish);
           resolve();
         };
-        const timer = setTimeout(finish, 4000);
+        const timer = setTimeout(
+          finish,
+          Math.max(1, Math.min(6000, deadline - Date.now())),
+        );
         receivedAuthorization = finish;
         controller.signal.addEventListener("abort", finish, { once: true });
         if (!panelOpen(activation) && !visibleRows()) {
@@ -290,6 +300,8 @@ export async function collectStreamPage(): Promise<PageCapture | undefined> {
       if (response.status === 401 && !initiallyAuthorized) {
         await response.body?.cancel();
         await usePlayerAuthorization();
+        if (controller.signal.aborted || !sameSource())
+          throw new Error("Reading stopped.");
         if (authorization && !controller.signal.aborted)
           response = await request();
       }

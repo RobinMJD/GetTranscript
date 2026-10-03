@@ -5,6 +5,7 @@ import {
   defaultCollectionOptions,
   exportCollection,
   newPart,
+  partTimingWarning,
   prepareCollectionTracks,
   sourceUrl,
   type RecordingCollection,
@@ -161,6 +162,121 @@ describe("collection timeline", () => {
     input.parts[0].duration = 10;
     expect(() => exportCollection(input)).toThrow("outside its video duration");
   });
+  it.each([5, 5.001])(
+    "bounds caption overhang at five seconds: %s",
+    (overhang) => {
+      const input = collection("vtt");
+      input.parts[0].duration = 100;
+      input.parts[0].tracks[0].transcript.cues = [
+        {
+          id: "tail",
+          start: 99,
+          end: 100 + overhang,
+          text: "Boundary caption",
+        },
+      ];
+      if (overhang <= 5) {
+        expect(parseVtt(exportCollection(input)[0].text)[0].end).toBe(105);
+        expect(collectionOffsets(input.parts, "continuous")[1]).toBe(100);
+      } else {
+        expect(() => exportCollection(input)).toThrow("export separate files");
+        input.options.mode = "individual";
+        expect(parseVtt(exportCollection(input)[0].text)[0].end).toBe(105.001);
+      }
+    },
+  );
+  it.each<Format>(["vtt", "srt"])(
+    "keeps interleaved boundary captions and media offsets in %s",
+    (format) => {
+      const input = collection(format);
+      input.parts = input.parts.slice(0, 2);
+      input.parts[0].duration = 100;
+      input.parts[0].tracks[0].transcript.cues = [
+        {
+          id: "tail-a",
+          start: 99,
+          end: 103.4,
+          text: "First tail",
+          speaker: "Jordan",
+        },
+        {
+          id: "tail-b",
+          start: 102.4,
+          end: 103.4,
+          text: "Later tail",
+          speaker: "Jordan",
+        },
+      ];
+      input.parts[1].tracks[0].transcript.cues = [
+        {
+          id: "next",
+          start: 0.5,
+          end: 1.5,
+          text: "Next recording",
+          speaker: "Alex",
+        },
+      ];
+      const before = JSON.stringify(input);
+      const output = exportCollection(input)[0].text;
+      const vtt =
+        format === "vtt"
+          ? output
+          : "WEBVTT\n\n" +
+            output.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
+      const cues = parseVtt(vtt);
+      expect(cues).toHaveLength(3);
+      expect(cues.map((cue) => [cue.start, cue.end])).toEqual([
+        [99, 103.4],
+        [100.5, 101.5],
+        [102.4, 103.4],
+      ]);
+      expect(cues.map((cue) => cue.text)).toEqual(
+        format === "vtt"
+          ? ["First tail", "Next recording", "Later tail"]
+          : [
+              "Jordan: First tail",
+              "Alex: Next recording",
+              "Jordan: Later tail",
+            ],
+      );
+      expect(JSON.stringify(input)).toBe(before);
+      expect(collectionOffsets(input.parts, "continuous")).toEqual([0, 100]);
+      input.options.timeline = "custom";
+      input.parts[0].offset = 0;
+      input.parts[1].offset = 100;
+      expect(exportCollection(input)[0].text).toBe(output);
+      input.parts[1].offset = 99;
+      expect(() => exportCollection(input)).toThrow(
+        "overlaps the preceding recording",
+      );
+    },
+  );
+  it("reports timing drift for cached tracks without inventing a video duration", () => {
+    const part = readyPart(0);
+    part.duration = 20;
+    expect(partTimingWarning(part)).toContain("1.600 seconds");
+    part.duration = 21.6;
+    expect(partTimingWarning(part)).toBeUndefined();
+    delete part.duration;
+    expect(partTimingWarning(part)).toBeUndefined();
+  });
+  it.each<Format>(["md", "txt", "json"])(
+    "retains the overhang warning and original timing metadata in %s",
+    (format) => {
+      const input = collection(format);
+      input.parts[0].duration = 20;
+      const warning = partTimingWarning(input.parts[0])!;
+      const output = exportCollection(input)[0].text;
+      expect(output).toContain(warning);
+      if (format === "json") {
+        const data = JSON.parse(output);
+        expect(data.parts[0].duration).toBe(20);
+        expect(data.parts[0].warnings).toContain(warning);
+        expect(data.parts[0].cues[0]).toMatchObject({ start: 19.2, end: 21.6 });
+        expect(data.parts[1].offset).toBe(20);
+      }
+    },
+  );
   it.each<Format>(["vtt", "srt"])(
     "rejects local timestamps in combined %s",
     (format) => {

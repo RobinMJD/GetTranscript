@@ -65,6 +65,14 @@
         clearing captured content for a fresh read.
       </p>
       <p>
+        Slow Stream players get up to 45 seconds to expose their controls and
+        captions. Supported Transcript controls open automatically. If a part
+        still needs attention, choose <strong>Open recording</strong>, select
+        <strong>Transcript</strong> on that page, then return here and choose
+        <strong>Retry this part</strong>. Retry reads an already-open recording
+        without reloading it. Previously ready parts remain saved.
+      </p>
+      <p>
         Progress tells you whether GetTranscript is waiting for the source tab,
         opening a recording, reading captions or restoring the starting page.
         Pause cancels a collection that is still waiting for the tab
@@ -88,6 +96,14 @@
         the original text is preserved without translation. Markdown, text and
         JSON can include links to the recordings. Combined JSON uses schema
         version 2 with part metadata, local cue times and timeline offsets.
+      </p>
+      <p>
+        Caption endings can run slightly past a video's reported duration.
+        Differences up to 5 seconds show a timing warning while preserving all
+        captions and their original timestamps. The next part still starts after
+        the reported video duration. Larger differences require refreshing the
+        recording or exporting with original timestamps; separate files remain
+        available.
       </p>
       <h2>Choose your format</h2>
       <dl>

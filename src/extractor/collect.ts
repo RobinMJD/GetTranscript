@@ -10,6 +10,7 @@ export async function collectPage(options: {
   speakers: boolean;
   prepare: boolean;
   resume?: RowCursor;
+  timeoutMs?: number;
 }): Promise<PageCapture> {
   const background = () => document.visibilityState === "hidden";
   const wait = (ms: number) =>
@@ -18,7 +19,10 @@ export async function collectPage(options: {
       : new Promise<void>((r) => setTimeout(r, ms));
   const startedAt = options.resume?.startedAt || Date.now();
   // Leave two seconds for restoring controls before this bounded chunk returns.
-  const deadline = Date.now() + 18000;
+  const timeoutMs = Number.isFinite(options.timeoutMs)
+    ? Math.max(1000, Math.min(18000, options.timeoutMs!))
+    : 18000;
+  const deadline = Date.now() + timeoutMs;
   const warnings: string[] = [];
   const canonicalSource = (raw: string) => {
     const url = new URL(raw, location.href);
@@ -31,6 +35,13 @@ export async function collectPage(options: {
     return url.href;
   };
   const sourceUrl = canonicalSource(location.href);
+  const sameSource = () => {
+    try {
+      return canonicalSource(location.href) === sourceUrl;
+    } catch {
+      return false;
+    }
+  };
   if (options.resume && options.resume.sourceUrl !== sourceUrl)
     throw new Error(
       "The recording changed while reading. Refresh to read the current video.",
@@ -98,39 +109,66 @@ export async function collectPage(options: {
   let openedTranscript = false;
   let previousPanel: HTMLElement | undefined;
   const waitUntil = async (ready: () => unknown, until: number) => {
-    if (ready() || Date.now() >= until) return;
-    if (background()) {
-      // A single observer/watchdog avoids chains of throttled polling timers.
-      await new Promise<void>((resolve) => {
-        let timeout: ReturnType<typeof setTimeout>;
-        const finish = () => {
-          observer.disconnect();
-          clearTimeout(timeout);
-          resolve();
-        };
-        const observer = new MutationObserver(() => {
-          if (ready()) finish();
-        });
-        observer.observe(document.documentElement, {
-          childList: true,
-          subtree: true,
-          attributes: true,
-        });
-        timeout = setTimeout(
-          finish,
-          Math.max(1, Math.min(4000, until - Date.now())),
-        );
-        if (ready()) finish();
+    if (!sameSource() || ready() || Date.now() >= until) return;
+    // Track cues can arrive without a DOM mutation. Observe structural changes
+    // and sample track readiness, including when the tab becomes hidden mid-read.
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      let timeout: ReturnType<typeof setTimeout>;
+      let sampler: ReturnType<typeof setInterval>;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        observer.disconnect();
+        clearTimeout(timeout);
+        clearInterval(sampler);
+        resolve();
+      };
+      const check = () => {
+        if (!sameSource() || ready() || Date.now() >= until) finish();
+      };
+      const observer = new MutationObserver(check);
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
       });
-      return;
-    }
-    while (!ready() && Date.now() < until && !background()) await wait(100);
+      timeout = setTimeout(finish, Math.max(1, until - Date.now()));
+      sampler = setInterval(check, 250);
+      check();
+    });
   };
+  const readableTracks = () =>
+    Array.from(document.querySelectorAll<HTMLMediaElement>("video,audio")).some(
+      (media) =>
+        Array.from(media.textTracks).some(
+          (track) =>
+            ["captions", "subtitles"].includes(track.kind) &&
+            !/Shaka Player TextTrack/i.test(track.label) &&
+            (track.cues?.length ||
+              Array.from(media.querySelectorAll("track")).some(
+                (element) => element.track === track && element.src,
+              )),
+        ),
+    );
   const prepareTranscriptPanel = async () => {
-    if (!isStream || !mayMountPlayer || !options.speakers || transcriptRows())
+    if (
+      !isStream ||
+      !mayMountPlayer ||
+      (!options.prepare && !options.speakers) ||
+      transcriptRows()
+    )
       return;
-    const panelDeadline = Math.min(deadline, Date.now() + 6000);
-    const controlDeadline = Math.min(panelDeadline, Date.now() + 2000);
+    // A generic player without a recording identity can already have usable
+    // captions. Only identified Stream recordings need the longer cold-panel wait.
+    if (
+      !new URL(sourceUrl).searchParams.has("id") &&
+      !findTranscriptButton() &&
+      readableTracks()
+    )
+      return;
+    const panelDeadline = Math.min(deadline, Date.now() + 12000);
+    const controlDeadline = Math.min(panelDeadline, Date.now() + 6000);
     await waitUntil(() => {
       transcriptButton = findTranscriptButton();
       return (
@@ -142,6 +180,8 @@ export async function collectPage(options: {
     }, controlDeadline);
     if (
       transcriptRows() ||
+      !sameSource() ||
+      Date.now() >= deadline ||
       !transcriptButton ||
       transcriptButton.hasAttribute("disabled") ||
       transcriptButton.getAttribute("aria-disabled") === "true"
@@ -154,21 +194,22 @@ export async function collectPage(options: {
           ?.querySelectorAll<HTMLElement>(
             'button,[role="button"],[role="tab"]',
           ) || [],
-      ).find((button) => button !== transcriptButton && selected(button));
+      ).find((button) => button !== transcriptButton && panelOpen(button));
       transcriptButton.click();
       openedTranscript = true;
       // React can commit synchronous activation in a microtask, including hidden tabs.
       await Promise.resolve();
     }
-    await waitUntil(transcriptRows, panelDeadline);
+    await waitUntil(() => transcriptRows() || readableTracks(), panelDeadline);
   };
   const restoreTranscriptPanel = () => {
+    if (!sameSource()) return;
     const current = transcriptButton?.isConnected
       ? transcriptButton
       : findTranscriptButton();
     if (openedTranscript && current && (panelOpen(current) || transcriptRows()))
       current.click();
-    if (previousPanel?.isConnected && !selected(previousPanel))
+    if (previousPanel?.isConnected && !panelOpen(previousPanel))
       previousPanel.click();
   };
   const findCaptionButton = () =>
@@ -213,14 +254,12 @@ export async function collectPage(options: {
     }
     await prepareTranscriptPanel();
     if (isStream && mayMountPlayer && options.prepare && !options.resume) {
-      await waitUntil(
-        () =>
-          Array.from(
-            document.querySelectorAll<HTMLMediaElement>("video,audio"),
-          ).some((media) => media.textTracks.length),
-        Math.min(deadline, Date.now() + 2000),
-      );
+      await waitUntil(readableTracks, Math.min(deadline, Date.now() + 6000));
     }
+    if (!sameSource())
+      throw new Error(
+        "The recording changed while reading. Refresh to read the current video.",
+      );
     captionButton = findCaptionButton();
     const normalizeDigits = (value: string): string =>
       value
@@ -437,22 +476,21 @@ export async function collectPage(options: {
       return menu ? items.filter((e) => menu.contains(e)) : [];
     };
     const openCaptionMenu = async (restoring = false) => {
-      if (!captionButton) return [];
+      if (!captionButton || !sameSource()) return [];
       if (captionButton.getAttribute("aria-expanded") !== "true") {
         captionButton.click();
       }
       const menuDeadline = restoring
         ? restorationDeadline
         : Math.min(deadline, Date.now() + 2000);
-      let items = captionItems();
-      while (!items.length && Date.now() < menuDeadline && !background()) {
-        await wait(100);
-        items = captionItems();
-      }
-      return items;
+      await waitUntil(() => captionItems().length, menuDeadline);
+      return sameSource() ? captionItems() : [];
     };
     const closeCaptionMenu = () => {
-      if (captionButton?.getAttribute("aria-expanded") === "true")
+      if (
+        sameSource() &&
+        captionButton?.getAttribute("aria-expanded") === "true"
+      )
         captionButton.click();
     };
     const prepareTrack = async (
@@ -484,14 +522,10 @@ export async function collectPage(options: {
       }
       matches[0].click();
       const trackDeadline = Math.min(deadline, Date.now() + 4000);
-      for (
-        ;
-        Date.now() < trackDeadline &&
-        !background() &&
-        !trackElement()?.src &&
-        !track.cues?.length;
-      )
-        await wait(100);
+      await waitUntil(
+        () => trackElement()?.src || track.cues?.length,
+        trackDeadline,
+      );
       closeCaptionMenu();
     };
     try {
@@ -572,12 +606,7 @@ export async function collectPage(options: {
             }
             if (!vtt && !track.cues?.length) {
               const cueDeadline = Math.min(deadline, Date.now() + 800);
-              while (
-                Date.now() < cueDeadline &&
-                !background() &&
-                !track.cues?.length
-              )
-                await wait(80);
+              await waitUntil(() => track.cues?.length, cueDeadline);
             }
             if (vtt) {
               if (captionSize + vtt.length > 5_000_000) {
@@ -660,7 +689,7 @@ export async function collectPage(options: {
       }
     } finally {
       restorationDeadline = Date.now() + 1500;
-      if (captionMenuTouched && captionButton) {
+      if (sameSource() && captionMenuTouched && captionButton) {
         if (originalCaption !== undefined) {
           const items = await openCaptionMenu(true);
           const previous = items.find(
@@ -853,7 +882,7 @@ export async function collectPage(options: {
         if (!rows.size && !rowCursor)
           warnings.push("Speaker labels are not exposed by this page.");
       } finally {
-        if (scroller) scroller.scrollTop = oldScroll;
+        if (sameSource() && scroller) scroller.scrollTop = oldScroll;
       }
     }
     const names = [...speakerNames].sort((a, b) => b.length - a.length);

@@ -330,6 +330,121 @@ test("discovered links require selection; ordering, advanced controls and mobile
   await video.close();
 });
 
+test("a failed part opens for manual Transcript recovery and retries without reloading or losing ready parts", async () => {
+  test.setTimeout(90000);
+  const video = await context.newPage();
+  await video.route("https://collection.sharepoint.com/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("id") !== new URL(urls[1]).searchParams.get("id"))
+      return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: "text/html;charset=utf-8",
+      body: `<!doctype html><html><head><title>Recovered workshop recording</title></head><body>
+        <video controls></video><button id="manual-open" disabled>Transcript</button>
+        <script>
+          const button = document.getElementById('manual-open');
+          const media = document.querySelector('video');
+          Object.defineProperty(media, 'duration', { value: ${durations[1]} });
+          // This deliberately unsupported control exercises the user-assisted
+          // fallback after automatic discovery was unable to expose captions.
+          setTimeout(() => { button.disabled = false; }, 3000);
+          button.onclick = () => {
+            if (media.querySelector('track')) return;
+            const track = document.createElement('track');
+            track.kind = 'subtitles'; track.default = true;
+            track.label = 'Original captions'; track.src = '/captions-1.vtt';
+            media.append(track);
+            button.textContent = 'Transcript opened';
+          };
+        </script></body></html>`,
+    });
+  });
+  await video.goto(urls[0]);
+  const id = await tabId(video);
+  const page = await workspace(video, id);
+  try {
+    await page
+      .getByRole("button", { name: "Read recordings", exact: true })
+      .click();
+    await expect(
+      page.getByText("All recordings are ready", { exact: true }),
+    ).toBeVisible({ timeout: 45000 });
+    const readyPart = (await storedCollection(page, id)).parts[0];
+    await page
+      .getByRole("button", { name: "Add recordings", exact: true })
+      .click();
+    await page.getByLabel("Paste recording links").fill(urls[1]);
+    await page.getByRole("button", { name: "Add links", exact: true }).click();
+    await expect(page.locator(".part")).toHaveCount(2);
+    // Restore a failed job as it would appear after a previous bounded read.
+    // Extraction and navigation below use the real worker and player collector.
+    await page.evaluate(async (id) => {
+      const key = `collection:${id}`;
+      const state = (await chrome.storage.session.get(key))[
+        key
+      ] as RecordingCollection;
+      state.revision++;
+      state.phase = "error";
+      state.parts[1].status = "error";
+      state.parts[1].error =
+        "This recording has not exposed readable captions yet.";
+      await chrome.storage.session.set({ [key]: state });
+    }, id);
+    const failed = page.locator(".part").nth(1);
+    await expect(
+      failed.getByText("Needs attention", { exact: true }),
+    ).toBeVisible();
+    await expect(failed.locator(".part-recovery")).toHaveText(
+      "If the player needs help, open this recording, select Transcript, then return here and retry.",
+    );
+    await page.screenshot({
+      path: test.info().outputPath("failed-part-recovery.png"),
+      fullPage: true,
+    });
+    let sourceNavigations = 0;
+    video.on("framenavigated", (frame) => {
+      if (frame === video.mainFrame()) sourceNavigations++;
+    });
+    await failed
+      .getByRole("button", { name: "Open recording", exact: true })
+      .click();
+    await expect(video).toHaveURL(urls[1]);
+    await expect
+      .poll(() =>
+        page.evaluate(async (id) => (await chrome.tabs.get(id)).active, id),
+      )
+      .toBe(true);
+    await expect(
+      failed.getByRole("button", { name: "Retry this part", exact: true }),
+    ).toBeEnabled();
+    expect((await storedCollection(page, id)).parts[0]).toEqual(readyPart);
+    await video
+      .getByRole("button", { name: "Transcript", exact: true })
+      .click();
+    await expect(video.locator("track")).toHaveCount(1);
+    expect(sourceNavigations).toBe(1);
+    await page.bringToFront();
+    await failed
+      .getByRole("button", { name: "Retry this part", exact: true })
+      .click();
+    await expect(
+      page.getByText("All recordings are ready", { exact: true }),
+    ).toBeVisible({ timeout: 45000 });
+    expect(sourceNavigations).toBe(1);
+    const recovered = await storedCollection(page, id);
+    expect(recovered.parts[0]).toEqual(readyPart);
+    expect(recovered.parts[1].tracks[0].transcript.cues[0].text).toBe(
+      "Recording 2 has its own captions.",
+    );
+    await expect(failed.locator(".part-recovery")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Download/ })).toBeEnabled();
+  } finally {
+    await page.close();
+    await video.close();
+  }
+});
+
 test("popup More options opens the collection workspace for its source video", async () => {
   const video = await context.newPage();
   await video.goto(urls[0]);
@@ -361,7 +476,7 @@ test("popup More options opens the collection workspace for its source video", a
   await popup.goto(`chrome-extension://${extensionId}/index.html`);
   await expect(
     popup.getByRole("button", { name: "Download VTT", exact: true }),
-  ).toBeEnabled();
+  ).toBeEnabled({ timeout: 45000 });
   await expect(
     popup.getByRole("button", { name: /Combine recordings/ }),
   ).toHaveCount(0);
@@ -393,6 +508,87 @@ test("popup More options opens the collection workspace for its source video", a
   await collection.close();
   await popup.close();
   await video.close();
+});
+
+test("cached caption overhang shows one timing warning and preserves original timestamps on download", async () => {
+  const video = await context.newPage();
+  await video.goto(urls[0]);
+  const id = await tabId(video);
+  const page = await workspace(video, id);
+  const warning =
+    "Caption timestamps extend 3.370 seconds beyond this video's reported duration. Original caption timings and video duration are preserved.";
+  try {
+    await page.evaluate(async (id) => {
+      const key = `collection:${id}`;
+      const state = (await chrome.storage.session.get(key))[
+        key
+      ] as RecordingCollection;
+      state.revision++;
+      state.phase = "ready";
+      state.options.format = "vtt";
+      state.parts[0] = {
+        ...state.parts[0],
+        duration: 60,
+        status: "ready",
+        selectedTrack: "original",
+        tracks: [
+          {
+            key: "original",
+            label: "Original captions",
+            language: "und",
+            transcript: {
+              title: "Timing drift workshop",
+              provider: "Microsoft Stream",
+              language: "und",
+              cues: [
+                {
+                  id: "final",
+                  start: 58,
+                  end: 63.37,
+                  text: "The closing words remain intact.",
+                  speaker: "Alex Morgan",
+                },
+              ],
+              warnings: [],
+            },
+          },
+        ],
+      };
+      await chrome.storage.session.set({ [key]: state });
+    }, id);
+    // The warning is derived for cached results, even when no warning was saved.
+    await page.reload();
+    await expect(page.getByText(warning, { exact: true })).toHaveCount(1);
+    await expect(page.getByText("00:01:00", { exact: true })).toBeVisible();
+    // Older/exported results may already carry the same warning; do not repeat it.
+    await page.evaluate(
+      async ({ id, warning }) => {
+        const key = `collection:${id}`;
+        const state = (await chrome.storage.session.get(key))[
+          key
+        ] as RecordingCollection;
+        state.revision++;
+        state.parts[0].tracks[0].transcript.warnings = [warning, warning];
+        await chrome.storage.session.set({ [key]: state });
+      },
+      { id, warning },
+    );
+    await expect(page.getByText(warning, { exact: true })).toHaveCount(1);
+    await page
+      .getByRole("button", { name: "Download VTT", exact: true })
+      .click();
+    await expect(
+      page.getByText("Saved to your browser’s downloads.", { exact: true }),
+    ).toBeVisible();
+    const file = await lastDownload(page);
+    const vtt = await readFile(file.filename, "utf8");
+    expect(vtt).toContain("00:00:58.000 --> 00:01:03.370");
+    expect(vtt).toContain("The closing words remain intact.");
+    expect((await storedCollection(page, id)).parts[0].duration).toBe(60);
+  } finally {
+    await page.close();
+    await video.close();
+  }
 });
 
 test("a queued collection pauses immediately and keeps format editable during a slow popup read", async () => {
@@ -532,9 +728,9 @@ test("a queued collection pauses immediately and keeps format editable during a 
         globalThis as typeof globalThis & { releaseQueuedRead: () => void }
       ).releaseQueuedRead(),
     );
-    await expect(
-      popup.getByRole("button", { name: /^Download/ }),
-    ).toBeEnabled();
+    await expect(popup.getByRole("button", { name: /^Download/ })).toBeEnabled({
+      timeout: 45000,
+    });
     await worker.evaluate(() =>
       (
         globalThis as typeof globalThis & { restoreQueuedRead: () => void }
@@ -575,6 +771,108 @@ const coldVtt =
       `00:${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}.200`;
     return `cold/${index + 1}\n${stamp(start)} --> ${stamp(start + 1)}\n${coldCaption(index)}\n`;
   }).join("\n");
+
+for (const startup of [
+  "disabled Transcript control",
+  "late caption response",
+] as const) {
+  test(`cold Stream waits for ${startup} instead of returning an empty part`, async () => {
+    test.setTimeout(60000);
+    const video = await context.newPage();
+    await video.route("https://collection.sharepoint.com/**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/startup-captions.vtt") {
+        if (startup === "late caption response")
+          await new Promise((resolve) => setTimeout(resolve, 8000));
+        return route.fulfill({
+          status: 200,
+          contentType: "text/vtt;charset=utf-8",
+          body: fixtureVtt(0),
+        });
+      }
+      if (!url.searchParams.has("startupFixture")) return route.fallback();
+      return route.fulfill({
+        status: 200,
+        contentType: "text/html;charset=utf-8",
+        body: `<!doctype html><html><head><title>Delayed player startup</title></head><body>
+          <video controls>${startup === "late caption response" ? '<track default kind="subtitles" label="Original captions" src="/startup-captions.vtt">' : ""}</video>
+          ${startup === "disabled Transcript control" ? '<button id="transcript-toggle" aria-controls="transcript-pane" aria-expanded="false" disabled>記録</button>' : ""}
+          <script>
+            const media = document.querySelector('video');
+            Object.defineProperty(media, 'duration', { value: 60 });
+            const button = document.getElementById('transcript-toggle');
+            window.transcriptActivations = 0;
+            if (button) {
+              setTimeout(() => { button.disabled = false; }, 4500);
+              button.onclick = () => {
+                const pane = document.getElementById('transcript-pane');
+                if (pane) { pane.remove(); button.setAttribute('aria-expanded', 'false'); return; }
+                window.transcriptActivations++;
+                button.setAttribute('aria-expanded', 'true');
+                const panel = document.createElement('section'); panel.id = 'transcript-pane'; document.body.append(panel);
+                if (!media.querySelector('track')) {
+                  const track = document.createElement('track'); track.default = true; track.kind = 'subtitles';
+                  track.label = 'Original captions'; track.src = '/startup-captions.vtt'; media.append(track);
+                }
+              };
+            }
+          </script></body></html>`,
+      });
+    });
+    await video.goto(
+      `${urls[0]}&startupFixture=${encodeURIComponent(startup)}`,
+      { waitUntil: "domcontentloaded" },
+    );
+    const id = await tabId(video);
+    const page = await workspace(video, id);
+    try {
+      if (process.env.HEADED === "1") {
+        await page.bringToFront();
+        await page.evaluate(async () => {
+          const tab = await chrome.tabs.getCurrent();
+          await chrome.tabs.update(tab!.id!, { active: true });
+        });
+        await expect
+          .poll(() => video.evaluate(() => document.visibilityState))
+          .toBe("hidden");
+      }
+      if (startup === "late caption response")
+        expect(
+          await video
+            .locator("track")
+            .evaluate((track: HTMLTrackElement) => track.readyState),
+        ).not.toBe(2);
+      await page
+        .getByRole("button", { name: "Read recordings", exact: true })
+        .click();
+      await expect(
+        page.getByText("All recordings are ready", { exact: true }),
+      ).toBeVisible({ timeout: 45000 });
+      const state = await storedCollection(page, id);
+      expect(state.parts[0].tracks[0].transcript.cues).toHaveLength(2);
+      expect(state.parts[0].tracks[0].transcript.cues[0].speaker).toBe(
+        "Alex Morgan",
+      );
+      if (startup === "disabled Transcript control") {
+        expect(
+          await video.evaluate(
+            () =>
+              (window as typeof window & { transcriptActivations: number })
+                .transcriptActivations,
+          ),
+        ).toBe(1);
+        await expect(video.locator("#transcript-pane")).toHaveCount(0);
+      }
+      await expect(
+        page.getByRole("button", { name: /^Download/ }),
+      ).toBeEnabled();
+    } finally {
+      await page.close();
+      await video.close();
+    }
+  });
+}
+
 async function coldStream(video: Page) {
   await video.route("https://collection.sharepoint.com/**", (route) => {
     const url = new URL(route.request().url());

@@ -56,6 +56,8 @@ Keep the source video tab open: collection visits each recording in that tab, th
 
 Progress distinguishes waiting for the source tab, opening a recording, reading captions and restoring the starting page. Pause cancels a collection that is still waiting for the tab immediately; an active reading step finishes safely before pausing. New collections inherit your saved popup format and speaker preferences. You can change the export format while recordings are being read; it applies when you download.
 
+Slow Stream players get up to 45 seconds to expose their controls and captions, with supported Transcript controls opened automatically. If a part still needs attention, use **Open recording** to bring its source tab forward, open **Transcript**, then return and choose **Retry this part**. Retry reads an already-open recording without reloading it, preserving manual preparation and previously completed parts.
+
 Choose **One combined transcript** in any of the five formats, or **Separate files (.zip)** to keep each recording’s original timestamps. Advanced timeline options are:
 
 - **Join end to end:** uses actual video durations, including silence. It does not infer pauses between recordings.
@@ -65,6 +67,8 @@ Choose **One combined transcript** in any of the five formats, or **Separate fil
 ![Combine recordings workspace](docs/images/store-collection-1280x800.png)
 
 Speaker labels are resolved separately within each recording before combining. Recordings combine even when spoken languages or caption-track language tags differ; the original text is preserved without translation. Markdown, text and JSON can include recording links. Combined JSON uses schema version 2, with per-part metadata, local cue timings and timeline offsets; single-recording JSON remains schema version 1.
+
+Some recordings report caption ends slightly beyond their video duration. Overhangs of up to 5 seconds are preserved with a timing warning; no captions are trimmed and the next part still starts after the reported video duration. Larger overhangs block a shared timeline until the recording is refreshed or exported with original timestamps. Separate files remain available.
 
 ## Supported pages and limits
 

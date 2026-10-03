@@ -354,7 +354,8 @@ h3 {
   padding: 3px 6px;
 }
 .part-error,
-.part-warning {
+.part-warning,
+.part-recovery {
   font-size: 11px;
   line-height: 1.6;
   margin: 10px 0 0 43px;
@@ -365,6 +366,9 @@ h3 {
 }
 .part-warning {
   color: #8c6328;
+}
+.part-recovery {
+  color: var(--muted);
 }
 .collection-progress {
   display: flex;
@@ -829,7 +833,8 @@ textarea::placeholder {
     gap: 5px 9px;
   }
   .part-error,
-  .part-warning {
+  .part-warning,
+  .part-recovery {
     margin-left: 36px;
   }
   .collection-progress {
